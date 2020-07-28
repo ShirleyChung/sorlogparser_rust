@@ -42,13 +42,15 @@ fn main() -> Result<()> {
 	println!("-=summary=-\n{}", parser.get_info());
 	
 	// 搜尋指定的目標
+	if !options.field.is_empty() {
 	let field_vec :Vec<String> = options.field.split(':').map(|s| s.to_string()).collect();
-	if field_vec.len() < 3 {
-		println!("please specify -f TableName:FieldName:Value");
-		return Ok(())
-	}
-	else {
-		parser.find_by_field(&field_vec[0], &field_vec[1], &field_vec[2]);
+		if field_vec.len() < 3 {
+			println!("please specify -f TableName:FieldName:Value");
+			return Ok(())
+		}
+		else {
+			parser.find_by_field(&field_vec[0], &field_vec[1], &field_vec[2]);
+		}
 	}
 	
 	Ok(())
