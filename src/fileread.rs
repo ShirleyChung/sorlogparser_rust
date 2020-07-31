@@ -9,6 +9,7 @@ pub enum LineType<T> {
 	EndOfFile,
 	Rec(T),
 	Log(T),
+	LogExt(T),
 	Empty,
 }
 
@@ -50,7 +51,10 @@ fn get_reader_line<R: Read>(reader: &mut BufReader<R>, encoding: &EncodingType) 
 			}
 			if line.as_bytes()[0] == ':' as u8 {
 				LineType::Log(line)
-			} else {
+			} else if sz_line > 3 && &line[..3] != "Req" && &line[..3] != "Ord" {
+				LineType::LogExt(line)
+			} 
+			else {
 				LineType::Rec(line)
 			}
 		},
@@ -69,30 +73,25 @@ fn get_encoding_constant(encoding_opt: &str) -> EncodingType {
 
 /// line by line with log 解析
 pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, encoding_opt: &str) {
-	let mut str_tmp: Option<String> = None;
+	let mut rec_tmp: String = "".to_string();
+	let mut log_tmp: String = "".to_string();
 	let encoding = get_encoding_constant(encoding_opt);
 	loop {
 		match get_reader_line(reader, &encoding) {
+			// 先把讀到的記錄暫存起來，為要和log一起parse
 			LineType::Rec(line) => {
-				match str_tmp {
-					Some(rec) => parser.parse_line(&rec, ""),
-					None      => (),
-				};
-				str_tmp = Some(line);
+				if !rec_tmp.is_empty() {
+					parser.parse_line(&rec_tmp, &log_tmp);
+					log_tmp.clear();
+				}
+				rec_tmp = line;
 			},
-			LineType::Log(log) => {
-				match str_tmp {
-					Some(rec) => parser.parse_line(&rec, &log),
-					None => (),
-				};
-				str_tmp = None;
-			},
+			// log 和 ext log 串成一串，等待rec再一併被parse
+			LineType::Log(log)    => log_tmp = log_tmp + &log,
+			LineType::LogExt(log) => log_tmp = log_tmp + &log,
 			LineType::Empty     =>  continue,
 			LineType::EndOfFile =>  break,
 		};
 	};
-	match str_tmp {
-		Some(rec) => parser.parse_line(&rec, ""),
-		None      => (),
-	};
+	parser.parse_line(&rec_tmp, &log_tmp);
 }
