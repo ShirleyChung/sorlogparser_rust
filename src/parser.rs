@@ -302,7 +302,13 @@ pub struct Parser {
 	info    : String,
 	prevkey : (&'static str, String)
 }
-
+/*
+pub struct Conditions {
+	table: String,
+	field: String,
+	value: String,
+}
+*/
 /// 陣列的操作函式
 impl Parser {
 	pub fn new()->Parser {
@@ -342,7 +348,7 @@ impl Parser {
 
 	/// 解析每一行的內容, 並儲存到HashMap
 	pub fn parse_line(&mut self, line: &str, log: &str) {
-		let toks : Vec<String> = line.to_string().split('\x01').map(|s| s.to_string()).collect();
+		let toks : Vec<String> = line.split('\x01').map(|s| s.to_string()).collect();
 
 		if toks.len() > 3 {
 			self.prevkey = self.ord_rec.insert_rec(toks, line, log);
@@ -350,12 +356,22 @@ impl Parser {
 			//println!("log line: {}", line);
 		}
 	}
+
+	pub fn find_by_conditions(&mut self, condstr: &str) {
+		for cond in condstr.split(',') {
+			let toks : Vec<&str> = cond.split(':').collect();
+			if toks.len() > 2 {
+				self.find_by_field(toks[0], toks[1], toks[2]);
+			} else {
+				println!("{} is not correct! please specify TableName:FieldName:Value", cond);
+			}
+		}
+	}
 	
 	/// 輸入 表名/欄位名/值 來尋找目標
 	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
 		// 先找看看 Req表
 		self.ord_rec.check_req_data(table_name, field_name, search_target);
-
 	}
 }
 
