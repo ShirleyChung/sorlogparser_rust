@@ -214,6 +214,19 @@ impl OrderRec {
 		info.status = get_ordst(ordst);
 		info
 	}
+	/// 檢查rec是否符合條件
+	pub fn check_rec(&self, rec: &Rec, table_name: &str, key_index: usize, target: &str) -> Option<String> {
+		if  rec.reqs_vec.len() < 3 || rec.reqs_vec[2] != table_name {
+			return None;
+		}
+		if rec.reqs_vec.len() > key_index {
+			if rec.reqs_vec[key_index] == target.to_string() {
+				let key = &rec.reqs_vec[1];
+				return Some(self.req2ord[key].to_string());
+			}
+		}
+		None
+	}
 	/// 印出指定 Ord Key 的 彙總以及 所有Log; 每筆Log會有timestamp
 	pub fn print_ord(&self, key: &str) {
 		let list = &self.get_target_ordlist(key);
@@ -226,17 +239,11 @@ impl OrderRec {
 	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) {
 		println!("find req {}, index={} ords:{}", target, key_index, self.ords.len());
 		let mut found = false;
-		for (key, rec) in &self.reqs  {
-			if  rec.reqs_vec.len() < 3 || rec.reqs_vec[2] != table_name {
-				continue;
-			}
-			if rec.reqs_vec.len() > key_index {
-				if rec.reqs_vec[key_index] == target.to_string() {
-					self.print_ord(&self.req2ord[key]);
-					found = true;
-				}
-			} else {
-				println!("line:{}, \n fields miss match.", rec.line);
+		for (_key, rec) in &self.reqs  {
+			match self.check_rec(&rec, table_name, key_index, target)
+			{
+				Some(key) => { self.print_ord(&key); found = true; },
+				None      => continue,
 			}
 		};
 		if !found {
@@ -249,16 +256,10 @@ impl OrderRec {
 		for (key, list) in &self.ords {
 			match list.back() {
 				Some(rec) => {
-					if  rec.reqs_vec.len() < 3 || rec.reqs_vec[2] != table_name {
-						continue;
-					}
-					if rec.reqs_vec.len() > key_index {
-						if rec.reqs_vec[key_index] == target.to_string() {
-							self.print_ord(&rec.reqs_vec[1]);
-							found = true;
-						}
-					} else {
-						println!("line:{}, \n fields miss match.", rec.line);
+					match self.check_rec(&rec, table_name, key_index, target)
+					{
+						Some(_) => { self.print_ord(&key); found = true; },
+						None      => continue,
 					}
 				},
 				_=>println!("{} is empty", key),
