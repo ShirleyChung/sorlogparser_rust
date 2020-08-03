@@ -222,43 +222,63 @@ impl OrderRec {
 		if rec.reqs_vec.len() > key_index {
 			if rec.reqs_vec[key_index] == target.to_string() {
 				let key = &rec.reqs_vec[1];
-				return Some(self.req2ord[key].to_string());
+				if rec.reqs_vec[0] == "Ord" {
+					return Some(key.to_string());
+				} else if rec.reqs_vec[0] == "Req" {
+					return Some(self.req2ord[key].to_string());
+				} else {
+					return None;
+				}
 			}
 		}
 		None
 	}
 	/// 印出指定 Ord Key 的 彙總以及 所有Log; 每筆Log會有timestamp
-	pub fn print_ord(&self, key: &str) {
+	/*pub fn print_ord(&self, key: &str) {
 		let list = &self.get_target_ordlist(key);
 		println!("{}", self.get_ord_summary(list).to_string() );
 		for rec in list {
 			rec.print();
 		}
+	}*/
+	pub fn find_list(&self, table_name: &str, key_index: usize, target: &str) {
+		
 	}
 	/// 以index, 找出ords中相等於target的rec
-	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) {
+	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
 		println!("find req {}, index={} ords:{}", target, key_index, self.ords.len());
 		let mut found = false;
-		for (_key, rec) in &self.reqs  {
+		let mut list_of_list = LinkedList::<LinkedList<&Rec>>::new();
+		for (_, rec) in &self.reqs  {
 			match self.check_rec(&rec, table_name, key_index, target)
 			{
-				Some(key) => { self.print_ord(&key); found = true; },
+				Some(key) => { 
+					//self.print_ord(&key);
+					list_of_list.push_back(self.get_target_ordlist(&key));
+					found = true; 
+				},
 				None      => continue,
 			}
 		};
 		if !found {
 			println!("{} not found", target);
 		}
+		list_of_list
 	}
 	/// 以index, 找出reqs中相等於target的rec
-	pub fn find_ord(&self, table_name: &str, key_index: usize, target: &str) {
+	pub fn find_ord(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
 		let mut found = false;
+		let mut list_of_list = LinkedList::<LinkedList<&Rec>>::new();
 		for (key, list) in &self.ords {
 			match list.back() {
 				Some(rec) => {
 					match self.check_rec(&rec, table_name, key_index, target)
 					{
-						Some(_) => { self.print_ord(&key); found = true; },
+						Some(key) => { 
+							//self.print_ord(&key);
+							list_of_list.push_back(self.get_target_ordlist(&key));
+							found = true;
+						},
 						None      => continue,
 					}
 				},
@@ -268,9 +288,10 @@ impl OrderRec {
 		if !found {
 			println!("{} not found", target);
 		}
+		list_of_list
 	}
 
-	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str) {
+	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
 		println!("checking {}, {}", field_name, search_target);
 		for (_, tab) in &self.tables {
 			tab.print();
@@ -280,10 +301,10 @@ impl OrderRec {
 				match tabrec.index.get(field_name) {
 					Some(idx) => {
 						if tabrec.recs[0] == "Req" {
-							self.find_req(table_name, *idx, search_target);
+							return Some(self.find_req(table_name, *idx, search_target));
 						}
 						else if tabrec.recs[0] == "Ord" {
-							self.find_ord(table_name, *idx, search_target);							
+							return Some(self.find_ord(table_name, *idx, search_target));
 						}
 						else {
 							println!("cannot find {}, {}", field_name, search_target);
@@ -293,7 +314,8 @@ impl OrderRec {
 				}
 			},
 			_=> println!("{} doesn't exist", field_name),
-		}	
+		}
+		None	
 	}
 }
 
@@ -372,7 +394,16 @@ impl Parser {
 	/// 輸入 表名/欄位名/值 來尋找目標
 	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
 		// 先找看看 Req表
-		self.ord_rec.check_req_data(table_name, field_name, search_target);
+		match self.ord_rec.check_req_data(table_name, field_name, search_target) {
+			Some(list_of_list) =>
+			for list in list_of_list {
+				println!("{}", self.ord_rec.get_ord_summary(&list).to_string() );
+				for rec in list {
+					rec.print();
+				}
+			},
+			None => println!("not found"),
+		}
 	}
 }
 
