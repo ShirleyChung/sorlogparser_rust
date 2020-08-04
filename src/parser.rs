@@ -241,8 +241,38 @@ impl OrderRec {
 			rec.print();
 		}
 	}*/
-	pub fn find_list(&self, table_name: &str, key_index: usize, target: &str) {
-		
+	/// 印出 Ord list 的 彙總以及 所有Log; 每筆Log會有timestamp
+	pub fn print_ord_list(&self, list: &LinkedList<&Rec>) {
+		println!("{}", self.get_ord_summary(&list).to_string() );
+		for rec in list {
+			rec.print();
+		}
+	}
+	/// 從前一次的搜尋結果中, 以給定的條件再次搜尋
+	#[allow(dead_code)]
+	pub fn find_list(&self, list_of_list: LinkedList<LinkedList<&Rec>>, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
+
+		match self.tables.get(table_name) {
+			Some(tabrec) => { // 有對應到指定的table
+				match tabrec.index.get(field_name) {
+					Some(idx) => {  // 有對應到指定的filed
+						let mut result_list = LinkedList::<LinkedList<&Rec>>::new();
+						for list in list_of_list { // 從給定的list of list裡搜尋每一筆list
+							for rec in list {       // 比對list裡的每一筆 rec
+								if let Some(key) = self.check_rec(rec, table_name, *idx, search_target) {
+									result_list.push_back(self.get_target_ordlist(&key)); // 有找到的話存進結果裡
+									break;
+								}
+							}
+						}
+						return Some(result_list);
+					},
+					_=> println!("field {} not found", field_name),
+				}
+			},
+			_=> println!("{} doesn't exist", table_name),
+		};
+		None
 	}
 	/// 以index, 找出ords中相等於target的rec
 	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
@@ -380,27 +410,38 @@ impl Parser {
 		}
 	}
 
+	/// 從輸入中解析出所有條件
 	pub fn find_by_conditions(&mut self, condstr: &str) {
+		let mut list_of_list = None;
 		for cond in condstr.split(',') {
 			let toks : Vec<&str> = cond.split(':').collect();
 			if toks.len() > 2 {
-				self.find_by_field(toks[0], toks[1], toks[2]);
+				match list_of_list {
+					Some(lol) => list_of_list = self.ord_rec.find_list(lol, toks[0], toks[1], toks[2]),
+					None => list_of_list = self.ord_rec.check_req_data(toks[0], toks[1], toks[2]),
+				}					
 			} else {
 				println!("{} is not correct! please specify TableName:FieldName:Value", cond);
 			}
-		}
+		};
+		match list_of_list {
+			Some(ret) => {
+				for list in ret {
+					self.ord_rec.print_ord_list(&list);
+				}
+			},
+			None => println!("not found any match"),
+		};
 	}
 	
 	/// 輸入 表名/欄位名/值 來尋找目標
+	#[allow(dead_code)]
 	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
 		// 先找看看 Req表
 		match self.ord_rec.check_req_data(table_name, field_name, search_target) {
 			Some(list_of_list) =>
 			for list in list_of_list {
-				println!("{}", self.ord_rec.get_ord_summary(&list).to_string() );
-				for rec in list {
-					rec.print();
-				}
+				self.ord_rec.print_ord_list(&list);
 			},
 			None => println!("not found"),
 		}
