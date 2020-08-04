@@ -251,12 +251,11 @@ impl OrderRec {
 	/// 從前一次的搜尋結果中, 以給定的條件再次搜尋
 	#[allow(dead_code)]
 	pub fn find_list(&self, list_of_list: LinkedList<LinkedList<&Rec>>, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
-
+		let mut result_list = LinkedList::<LinkedList<&Rec>>::new();
 		match self.tables.get(table_name) {
 			Some(tabrec) => { // 有對應到指定的table
 				match tabrec.index.get(field_name) {
 					Some(idx) => {  // 有對應到指定的filed
-						let mut result_list = LinkedList::<LinkedList<&Rec>>::new();
 						for list in list_of_list { // 從給定的list of list裡搜尋每一筆list
 							for rec in list {       // 比對list裡的每一筆 rec
 								if let Some(key) = self.check_rec(rec, table_name, *idx, search_target) {
@@ -265,14 +264,13 @@ impl OrderRec {
 								}
 							}
 						}
-						return Some(result_list);
 					},
 					_=> println!("field {} not found", field_name),
 				}
 			},
 			_=> println!("{} doesn't exist", table_name),
 		};
-		None
+		Some(result_list)
 	}
 	/// 以index, 找出ords中相等於target的rec
 	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
@@ -430,7 +428,7 @@ impl Parser {
 					self.ord_rec.print_ord_list(&list);
 				}
 			},
-			None => println!("not found any match"),
+			None => println!("not found any matches"),
 		};
 	}
 	
