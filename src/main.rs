@@ -27,6 +27,9 @@ struct Options {
 	/// 輸出存檔
 	#[structopt(short="s", long="save")]
 	save: bool,	
+	/// 不印出搜尋結果list
+	#[structopt(short="h", long="hide")]
+	hide: bool,		
 	/// 選擇存檔路徑
 	#[structopt(short="o", long="output", default_value = "")]
 	savepath: String,
@@ -60,7 +63,7 @@ fn main() -> Result<()> {
 		} else {
 			"".to_string()
 		};
-		parser.find_by_conditions(&options.field, &savepath);
+		parser.find_by_conditions(&options.field, &savepath, &options.hide);
 	}
 	
 	Ok(())

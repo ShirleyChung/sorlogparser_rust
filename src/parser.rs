@@ -268,6 +268,7 @@ impl OrderRec {
 	/// 從前一次的搜尋結果中, 以給定的條件再次搜尋
 	#[allow(dead_code)]
 	pub fn find_list(&self, list_of_list: LinkedList<LinkedList<&Rec>>, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
+		println!("checking {}, {}", field_name, search_target);
 		let mut result_list = LinkedList::<LinkedList<&Rec>>::new();
 		match self.tables.get(table_name) {
 			Some(tabrec) => { // 有對應到指定的table
@@ -291,7 +292,6 @@ impl OrderRec {
 	}
 	/// 以index, 找出ords中相等於target的rec
 	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
-		println!("find req {}, index={} ords:{}", target, key_index, self.ords.len());
 		let mut found = false;
 		let mut list_of_list = LinkedList::<LinkedList<&Rec>>::new();
 		for (_, rec) in &self.reqs  {
@@ -336,10 +336,12 @@ impl OrderRec {
 		list_of_list
 	}
 
-	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
+	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool) -> Option<LinkedList<LinkedList<&Rec>>> {
 		println!("checking {}, {}", field_name, search_target);
-		for (_, tab) in &self.tables {
-			tab.print();
+		if !hide {
+			for (_, tab) in &self.tables {
+				tab.print();
+			}
 		}
 		match self.tables.get(table_name) {
 			Some(tabrec) => { 
@@ -426,14 +428,14 @@ impl Parser {
 	}
 
 	/// 從輸入中解析出所有條件
-	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str) {
+	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool) {
 		let mut list_of_list = None;
 		for cond in condstr.split(',') {
 			let toks : Vec<&str> = cond.split(':').collect();
 			if toks.len() > 2 {
 				match list_of_list {
 					Some(lol) => list_of_list = self.ord_rec.find_list(lol, toks[0], toks[1], toks[2]),
-					None => list_of_list = self.ord_rec.check_req_data(toks[0], toks[1], toks[2]),
+					None => list_of_list = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide),
 				}					
 			} else {
 				println!("{} is not correct! please specify TableName:FieldName:Value", cond);
@@ -441,10 +443,12 @@ impl Parser {
 		};
 		match list_of_list {
 			Some(ret) => {
-				for list in &ret {
-					self.ord_rec.print_ord_list(&list);
+				println!("{} occurence found.", ret.len());
+				if !hide {
+					for list in &ret {
+						self.ord_rec.print_ord_list(&list);
+					}
 				}
-
 				self.save_to_file(&ret, savefile);
 			},
 			None => println!("not found any matches"),
@@ -467,7 +471,7 @@ impl Parser {
 	#[allow(dead_code)]
 	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
 		// 先找看看 Req表
-		match self.ord_rec.check_req_data(table_name, field_name, search_target) {
+		match self.ord_rec.check_req_data(table_name, field_name, search_target, &true) {
 			Some(list_of_list) =>
 			for list in list_of_list {
 				self.ord_rec.print_ord_list(&list);
