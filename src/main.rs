@@ -18,12 +18,18 @@ use crate::fileread::*;
 struct Options {
 	/// 要解析的SorReqOrd.log
 	filepath: String, // Log檔路徑
-	/// 指定TableName:FieldName:SearchValue; 例如 -f TwsNew:SorRID:100001
+	/// 指定TableName:FieldName:SearchValue; 例如 -f TwsNew:SorRID:100001, 可指定多組做交集運算，以","為分隔符號
 	#[structopt(short="f", long="field", default_value = "")]
 	field   : String,
 	/// SorReqOrd.log 檔案編碼格式, 預設BIG5
 	#[structopt(short="e", long="encoding", default_value = "BIG5")]
 	encoding: String,
+	/// 輸出存檔
+	#[structopt(short="s", long="save")]
+	save: bool,	
+	/// 選擇存檔路徑
+	#[structopt(short="o", long="output", default_value = "output.log")]
+	savepath: String,
 }
 
 /// 第一參數指定檔案
@@ -43,7 +49,12 @@ fn main() -> Result<()> {
 	
 	// 搜尋指定的目標
 	if !options.field.is_empty() {
-		parser.find_by_conditions(&options.field);
+		let savepath = if options.save {
+			&options.savepath
+		} else {
+			""
+		};
+		parser.find_by_conditions(&options.field, savepath);
 	}
 	
 	Ok(())

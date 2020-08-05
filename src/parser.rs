@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::fmt;
 use chrono::prelude::*;
+use std::fs::File;
+use std::io::prelude::*;
 
 // 每一筆資料由 string array組成每一個欄位，原資料ReqOrd, 以及相關的log
 pub struct Rec {
@@ -58,6 +60,14 @@ impl Rec {
 			}
 		}
 		println!("{}\n{}", self.line, self.log);
+	}
+	pub fn to_string(&self) -> String {
+		let mut ret = String::new();
+		ret.push_str(&self.line);
+		ret.push_str("\n");
+		ret.push_str(&self.log);
+		ret.push_str("\n");
+		ret
 	}
 }
 
@@ -241,6 +251,16 @@ impl OrderRec {
 			rec.print();
 		}
 	}*/
+	/// 將ord list轉為字串
+	pub fn ord_list_to_string(&self, list: &LinkedList<&Rec>) -> String {
+		let mut list_str = String::new();
+		list_str.push_str(&self.get_ord_summary(&list).to_string());
+		list_str.push_str("\n");
+		for rec in list {
+			list_str.push_str(&rec.to_string());
+		}
+		list_str
+	}
 	/// 印出 Ord list 的 彙總以及 所有Log; 每筆Log會有timestamp
 	pub fn print_ord_list(&self, list: &LinkedList<&Rec>) {
 		println!("{}", self.get_ord_summary(&list).to_string() );
@@ -409,7 +429,7 @@ impl Parser {
 	}
 
 	/// 從輸入中解析出所有條件
-	pub fn find_by_conditions(&mut self, condstr: &str) {
+	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str) {
 		let mut list_of_list = None;
 		for cond in condstr.split(',') {
 			let toks : Vec<&str> = cond.split(':').collect();
@@ -424,12 +444,26 @@ impl Parser {
 		};
 		match list_of_list {
 			Some(ret) => {
-				for list in ret {
+				for list in &ret {
 					self.ord_rec.print_ord_list(&list);
 				}
+
+				self.save_to_file(&ret, savefile);
 			},
 			None => println!("not found any matches"),
 		};
+	}
+
+	/// 把list of list 存到檔案
+	pub fn save_to_file(&self, list_of_list: &LinkedList<LinkedList<&Rec>>, savefile: &str) {
+		if let Ok(mut buff) = File::create(savefile) {
+			for list in list_of_list {
+				match buff.write(self.ord_rec.ord_list_to_string(&list).as_bytes()) {
+					Ok(_) => (),
+					_ => (),
+				}
+			}					
+		}
 	}
 	
 	/// 輸入 表名/欄位名/值 來尋找目標
