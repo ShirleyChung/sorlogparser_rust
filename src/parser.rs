@@ -63,10 +63,22 @@ impl Rec {
 	}
 	pub fn to_string(&self) -> String {
 		let mut ret = String::new();
-		ret.push_str(&self.line);
-		ret.push_str("\n");
-		ret.push_str(&self.log);
-		ret.push_str("\n");
+		if self.reqs_vec.len() > 5 {
+			if self.is_req() {
+				let type_key = &self.reqs_vec[4][..];
+				let ord_type: &str = match type_key
+				{ "1" => "新單", "2" => "改量", "3" => "改價", "4" => "刪單", "10" =>"成交", _=> "" };
+				ret = format!("{} ({})\n", self.get_timestamp(), ord_type);
+			} 
+			else {
+				if let Ok(st) = self.reqs_vec[6].parse::<i32>() {
+					ret = format!("{} =>{}\n", self.get_timestamp(), get_ordst(st));
+				} else {
+					ret = format!("{}\n", self.get_timestamp());
+				}
+			}
+		}
+		ret.push_str(&format!("{}\n{}\n", self.line, self.log));
 		ret
 	}
 }

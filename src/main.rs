@@ -28,7 +28,7 @@ struct Options {
 	#[structopt(short="s", long="save")]
 	save: bool,	
 	/// 選擇存檔路徑
-	#[structopt(short="o", long="output", default_value = "output.log")]
+	#[structopt(short="o", long="output", default_value = "")]
 	savepath: String,
 }
 
@@ -50,11 +50,17 @@ fn main() -> Result<()> {
 	// 搜尋指定的目標
 	if !options.field.is_empty() {
 		let savepath = if options.save {
-			&options.savepath
+			if options.savepath.is_empty() {
+				let mut tmp: String = options.field.chars().map(|x| match x {','=>'_', ':' => '_', _ => x}).collect();
+				tmp.push_str(".log");
+				tmp
+			} else {
+				options.savepath
+			}
 		} else {
-			""
+			"".to_string()
 		};
-		parser.find_by_conditions(&options.field, savepath);
+		parser.find_by_conditions(&options.field, &savepath);
 	}
 	
 	Ok(())
