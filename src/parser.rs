@@ -22,7 +22,7 @@ fn get_ordst(st: i32) -> String {
 		110 => "部份成交".to_string(),
 		111 => "全部成交".to_string(),
 		120 => "交易所取消".to_string(),
-		_ => "".to_string(),
+		_ => "未知".to_string(),
 	}
 }
 
@@ -203,6 +203,7 @@ impl OrderRec {
 	fn get_ord_summary(&self, list: &LinkedList<&Rec>) -> OrdInfo {
 		let mut info = OrdInfo::new();
 		let mut ordst :i32 = 0;
+		let mut reqst :i32 = 0;
 		//let mut reqst :i32 = 0;
 		for rec in list {
 			if rec.reqs_vec[0] == "Req" && rec.reqs_vec[4] == "1" { // 若是新單要求，則取流水號
@@ -211,14 +212,19 @@ impl OrderRec {
 			}
 			if rec.reqs_vec[0] == "Ord" {
 				info.ordno = self.get_value(rec, "OrdNo");
-				if let Ok(st) = rec.reqs_vec[7].parse::<i32>() {
+				if let Ok(st) = self.get_value(rec, "OrderSt").parse::<i32>() {
 					if st > ordst {
 						ordst = st;
+						if let Ok(rst) = self.get_value(rec, "ReqStep").parse::<i32>() {
+							reqst = rst;
+						}
 					}
 				}
 			}
 		}
-		info.status = get_ordst(ordst);
+		info.status = get_ordst(reqst);
+		info.status.push_str("/");
+		info.status.push_str(&get_ordst(ordst));
 		info
 	}
 	/// 檢查rec是否符合條件
