@@ -7,30 +7,36 @@ use std::fs::File;
 mod parser;
 use crate::parser::*;
 
+mod rpt_parser;
+use crate::rpt_parser::*;
+
 mod fileread;
 use crate::fileread::*;
 
 /// SorReqOrd Parser
-/// 可從檔案中, 取得與指定欄位值相符的記錄
+/// Retrieve record of specified fields from given SorReqOrd.log
 
-// 1.參數取得
+// 1.Parameters parsing
 #[derive(StructOpt)]
 struct Options {
-	/// 要解析的SorReqOrd.log
-	filepath: String, // Log檔路徑
-	/// 指定TableName:FieldName:SearchValue; 例如 -f TwsNew:SorRID:100001, 可指定多組做交集運算，以","為分隔符號
+	/// Target SorReqOrd.log
+	filepath: String, // Log file path
+	/// Log file parsing
+	#[structopt(short="ml", long="mllogfile", default_value = "MLStkRpt.log")]
+	mlrptlog : String,
+	/// Please specify TableName:FieldName:SearchValue; ex: -f TwsNew:SorRID:100001, using "," to connect multiple conditions
 	#[structopt(short="f", long="field", default_value = "")]
 	field   : String,
-	/// SorReqOrd.log 檔案編碼格式, 預設BIG5
+	/// SorReqOrd.log encoding type
 	#[structopt(short="e", long="encoding", default_value = "BIG5")]
 	encoding: String,
-	/// 輸出存檔
+	/// save the output contents
 	#[structopt(short="s", long="save")]
 	save: bool,	
-	/// 不印出搜尋結果list
+	/// do not print the result list
 	#[structopt(short="h", long="hide")]
 	hide: bool,		
-	/// 選擇存檔路徑
+	/// path of the saving file
 	#[structopt(short="o", long="output", default_value = "")]
 	savepath: String,
 }
@@ -38,32 +44,50 @@ struct Options {
 /// 第一參數指定檔案
 /// 將其讀入陣列以便解析
 fn main() -> Result<()> {
-	let options    = Options::from_args();
+	let options = Options::from_args();
 
-	let f          = File::open(options.filepath)?;
-	let mut reader = BufReader::new(f);
-	let mut parser = Parser::new();
+	if !options.filepath.is_empty() {
+		if let Ok(f) = File::open(&options.filepath) {
+			let mut reader = BufReader::new(f);
+			let mut parser = Parser::new();
 
-	// 依每行解析
-	read_data_log(&mut reader, &mut parser, &options.encoding);
+			// 依每行解析
+			read_data_log(&mut reader, &mut parser, &options.encoding);
 
-	// 解析完了, 顯示解析結果
-	println!("-=summary=-\n{}", parser.get_info());
-	
-	// 搜尋指定的目標
-	if !options.field.is_empty() {
-		let savepath = if options.save {
-			if options.savepath.is_empty() {
-				let mut tmp: String = options.field.chars().map(|x| match x {','=>'_', ':' => '_', _ => x}).collect();
-				tmp.push_str(".log");
-				tmp
-			} else {
-				options.savepath
+			// 解析完了, 顯示解析結果
+			println!("-=summary=-\n{}", parser.get_info());
+			
+			// 搜尋指定的目標
+			if !options.field.is_empty() {
+				let savepath = if options.save {
+					if options.savepath.is_empty() {
+						let mut tmp: String = options.field.chars().map(|x| match x {','=>'_', ':' => '_', _ => x}).collect();
+						tmp.push_str(".log");
+						tmp
+					} else {
+						options.savepath
+					}
+				} else {
+					"".to_string()
+				};
+				parser.find_by_conditions(&options.field, &savepath, &options.hide);
 			}
 		} else {
-			"".to_string()
-		};
-		parser.find_by_conditions(&options.field, &savepath, &options.hide);
+			println!("error opening {}", options.filepath);
+		}
+	} else if !options.mlrptlog.is_empty() {
+		if let Ok(f) = File::open(&options.mlrptlog) {
+			let mut reader = BufReader::new(f);
+			let mut rptparer = RptParser::new();
+			
+			// 依每行解析
+			println!("parsing {}", options.mlrptlog);
+			read_rpt_log(&mut reader, &mut rptparer, &options.encoding);
+		} else {
+			println!("error opening {}", options.mlrptlog);
+		}
+	} else {
+		println!("Need SorReqOrd.log or ml_log");
 	}
 	
 	Ok(())

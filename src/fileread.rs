@@ -4,6 +4,7 @@ use encoding::{Encoding, DecoderTrap};
 use encoding::all::{ BIG5_2003, GB18030, ISO_2022_JP };
 
 use crate::parser::Parser;
+use crate::rpt_parser::RptParser;
 
 pub enum LineType<T> {
 	EndOfFile,
@@ -73,6 +74,31 @@ fn get_encoding_constant(encoding_opt: &str) -> EncodingType {
 
 /// line by line with log 解析
 pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, encoding_opt: &str) {
+	let mut rec_tmp: String = "".to_string();
+	let mut log_tmp: String = "".to_string();
+	let encoding = get_encoding_constant(encoding_opt);
+	loop {
+		match get_reader_line(reader, &encoding) {
+			// 先把讀到的記錄暫存起來，為要和log一起parse
+			LineType::Rec(line) => {
+				if !rec_tmp.is_empty() {
+					parser.parse_line(&rec_tmp, &log_tmp);
+					log_tmp.clear();
+				}
+				rec_tmp = line;
+			},
+			// log 和 ext log 串成一串，等待rec再一併被parse
+			LineType::Log(log)    => log_tmp = log_tmp + &log,
+			LineType::LogExt(log) => log_tmp = log_tmp + &log,
+			LineType::Empty     =>  continue,
+			LineType::EndOfFile =>  break,
+		};
+	};
+	parser.parse_line(&rec_tmp, &log_tmp);
+}
+
+/// line by line with log 解析
+pub fn read_rpt_log<R: Read>(reader: &mut BufReader<R>, parser: &mut RptParser, encoding_opt: &str) {
 	let mut rec_tmp: String = "".to_string();
 	let mut log_tmp: String = "".to_string();
 	let encoding = get_encoding_constant(encoding_opt);

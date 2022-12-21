@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::fmt;
 use chrono::prelude::*;
-use std::fs::File;
-use std::io::prelude::*;
 
 // 每一筆資料由 string array組成每一個欄位，原資料ReqOrd, 以及相關的log
 pub struct Rec {
@@ -22,7 +20,7 @@ fn get_ordst(st: i32) -> String {
 		110 => "部份成交".to_string(),
 		111 => "全部成交".to_string(),
 		120 => "交易所取消".to_string(),
-		_ => "未知".to_string(),
+		_ => "".to_string(),
 	}
 }
 
@@ -36,36 +34,30 @@ impl Rec {
 		if self.reqs_vec.len() > 3 {
 			let ts_toks : Vec<String> = self.reqs_vec[3].split('.').map(|s| s.to_string()).collect();
 			if ts_toks.len() > 1 {
-				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
-					let datetime: DateTime<Local> = Local.timestamp(u_secs, 0);
-					dt = datetime.format("%Y-%m-%d %H:%M:%S:").to_string() + &ts_toks[1];
-				}
+				let u_secs = ts_toks[0].parse::<i64>().unwrap();
+				let datetime: DateTime<Local> = Local.timestamp(u_secs, 0);
+				dt = datetime.format("%Y-%m-%d %H:%M:%S:").to_string() + &ts_toks[1];
 			}
 		}
 		dt
 	}
 	pub fn print(&self) {
-		print!("{}", self.to_string());
-	}
-	pub fn to_string(&self) -> String {
-		let mut ret = String::new();
 		if self.reqs_vec.len() > 5 {
 			if self.is_req() {
 				let type_key = &self.reqs_vec[4][..];
 				let ord_type: &str = match type_key
 				{ "1" => "新單", "2" => "改量", "3" => "改價", "4" => "刪單", "10" =>"成交", _=> "" };
-				ret = format!("{} ({})\n", self.get_timestamp(), ord_type);
+				println!("{} ({})", self.get_timestamp(), ord_type);
 			} 
 			else {
 				if let Ok(st) = self.reqs_vec[6].parse::<i32>() {
-					ret = format!("{} =>{}\n", self.get_timestamp(), get_ordst(st));
+					println!("{} =>{}", self.get_timestamp(), get_ordst(st));
 				} else {
-					ret = format!("{}\n", self.get_timestamp());
+					println!("{}", self.get_timestamp());
 				}
 			}
 		}
-		ret.push_str(&format!("{}\n{}\n", self.line, self.log));
-		ret
+		println!("{}\n{}", self.line, self.log);
 	}
 }
 
@@ -204,7 +196,6 @@ impl OrderRec {
 	fn get_ord_summary(&self, list: &LinkedList<&Rec>) -> OrdInfo {
 		let mut info = OrdInfo::new();
 		let mut ordst :i32 = 0;
-		let mut reqst :i32 = 0;
 		//let mut reqst :i32 = 0;
 		for rec in list {
 			if rec.reqs_vec[0] == "Req" && rec.reqs_vec[4] == "1" { // 若是新單要求，則取流水號
@@ -213,19 +204,14 @@ impl OrderRec {
 			}
 			if rec.reqs_vec[0] == "Ord" {
 				info.ordno = self.get_value(rec, "OrdNo");
-				if let Ok(st) = self.get_value(rec, "OrderSt").parse::<i32>() {
+				if let Ok(st) = rec.reqs_vec[7].parse::<i32>() {
 					if st > ordst {
 						ordst = st;
-						if let Ok(rst) = self.get_value(rec, "ReqStep").parse::<i32>() {
-							reqst = rst;
-						}
 					}
 				}
 			}
 		}
-		info.status = get_ordst(reqst);
-		info.status.push_str("/");
-		info.status.push_str(&get_ordst(ordst));
+		info.status = get_ordst(ordst);
 		info
 	}
 	/// 檢查rec是否符合條件
@@ -255,16 +241,6 @@ impl OrderRec {
 			rec.print();
 		}
 	}*/
-	/// 將ord list轉為字串
-	pub fn ord_list_to_string(&self, list: &LinkedList<&Rec>) -> String {
-		let mut list_str = String::new();
-		list_str.push_str(&self.get_ord_summary(&list).to_string());
-		list_str.push_str("\n");
-		for rec in list {
-			list_str.push_str(&rec.to_string());
-		}
-		list_str
-	}
 	/// 印出 Ord list 的 彙總以及 所有Log; 每筆Log會有timestamp
 	pub fn print_ord_list(&self, list: &LinkedList<&Rec>) {
 		println!("{}", self.get_ord_summary(&list).to_string() );
@@ -275,7 +251,6 @@ impl OrderRec {
 	/// 從前一次的搜尋結果中, 以給定的條件再次搜尋
 	#[allow(dead_code)]
 	pub fn find_list(&self, list_of_list: LinkedList<LinkedList<&Rec>>, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
-		println!("checking {}, {}", field_name, search_target);
 		let mut result_list = LinkedList::<LinkedList<&Rec>>::new();
 		match self.tables.get(table_name) {
 			Some(tabrec) => { // 有對應到指定的table
@@ -299,6 +274,7 @@ impl OrderRec {
 	}
 	/// 以index, 找出ords中相等於target的rec
 	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
+		println!("find req {}, index={} ords:{}", target, key_index, self.ords.len());
 		let mut found = false;
 		let mut list_of_list = LinkedList::<LinkedList<&Rec>>::new();
 		for (_, rec) in &self.reqs  {
@@ -343,12 +319,10 @@ impl OrderRec {
 		list_of_list
 	}
 
-	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool) -> Option<LinkedList<LinkedList<&Rec>>> {
+	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
 		println!("checking {}, {}", field_name, search_target);
-		if !hide {
-			for (_, tab) in &self.tables {
-				tab.print();
-			}
+		for (_, tab) in &self.tables {
+			tab.print();
 		}
 		match self.tables.get(table_name) {
 			Some(tabrec) => { 
@@ -370,130 +344,5 @@ impl OrderRec {
 			_=> println!("{} doesn't exist", field_name),
 		}
 		None	
-	}
-}
-
-// 4. 解析管理
-pub struct Parser {
-	ord_rec : OrderRec,
-	info    : String,
-	prevkey : (&'static str, String)
-}
-/*
-pub struct Conditions {
-	table: String,
-	field: String,
-	value: String,
-}
-*/
-/// 陣列的操作函式
-impl Parser {
-	pub fn new()->Parser {
-		Parser{ 
-			ord_rec: OrderRec::new(),
-			info   : String::new(),
-			prevkey: ("", "".to_string()),
-		}
-	}
-
-	///取得統計資訊
-	pub fn get_info(&mut self) -> &str {
-		if self.info.is_empty() {
-			let mut deals = 0;
-			let mut fails = 0;
-			// 掃描req列表，統計
-			for (_, req) in &self.ord_rec.reqs {
-				if req.reqs_vec[4] == "10" || req.reqs_vec[4] == "11" {
-					deals = deals + 1;
-				}
-			}
-			// 掃描req列表，統計
-			for (_, ord) in &self.ord_rec.ords {
-				if let Some(rec) = ord.back() {
-					if rec.reqs_vec.len() > 7 && rec.reqs_vec[7] == "99" {
-						fails = fails + 1;
-					}
-				}
-			}
-			self.info = format!("tables:\t{}\nreqs:\t{}\nords:\t{}\ndeals:\t{}\nfailed:\t{}\n", 
-				self.ord_rec.tables.len(), self.ord_rec.reqs.len(), self.ord_rec.ords.len(),
-				deals, fails);
-			&self.info
-		}
-		else {
-			&self.info
-		}
-	}
-
-	/// 解析每一行的內容, 並儲存到HashMap
-	pub fn parse_line(&mut self, line: &str, log: &str) {
-		let toks : Vec<String> = line.split('\x01').map(|s| s.to_string()).collect();
-
-		if toks.len() > 3 {
-			self.prevkey = self.ord_rec.insert_rec(toks, line, log);
-		} else {
-			//println!("log line: {}", line);
-		}
-	}
-
-	/// 從輸入中解析出所有條件
-	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool) {
-		let mut list_of_list = None;
-		for cond in condstr.split(',') {
-			let toks : Vec<&str> = cond.split(':').collect();
-			if toks.len() > 2 {
-				match list_of_list {
-					Some(lol) => list_of_list = self.ord_rec.find_list(lol, toks[0], toks[1], toks[2]),
-					None => list_of_list = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide),
-				}					
-			} else {
-				println!("{} is not correct! please specify TableName:FieldName:Value", cond);
-			}
-		};
-		match list_of_list {
-			Some(ret) => {
-				println!("{} occurence found.", ret.len());
-				if !hide {
-					for list in &ret {
-						self.ord_rec.print_ord_list(&list);
-					}
-				}
-				self.save_to_file(&ret, savefile);
-			},
-			None => println!("not found any matches"),
-		};
-	}
-
-	/// 把list of list 存到檔案
-	pub fn save_to_file(&self, list_of_list: &LinkedList<LinkedList<&Rec>>, savefile: &str) {
-		if let Ok(mut buff) = File::create(savefile) {
-			for list in list_of_list {
-				match buff.write(self.ord_rec.ord_list_to_string(&list).as_bytes()) {
-					Ok(_) => (),
-					_ => (),
-				}
-			}					
-		}
-	}
-	
-	/// 輸入 表名/欄位名/值 來尋找目標
-	#[allow(dead_code)]
-	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
-		// 先找看看 Req表
-		match self.ord_rec.check_req_data(table_name, field_name, search_target, &true) {
-			Some(list_of_list) =>
-			for list in list_of_list {
-				self.ord_rec.print_ord_list(&list);
-			},
-			None => println!("not found"),
-		}
-	}
-}
-
-/// 使Parse類別能以println列印出來
-impl fmt::Display for Parser {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "tables: {} reqs: {} ords:{}", 
-			self.ord_rec.tables.len(), self.ord_rec.reqs.len(), self.ord_rec.ords.len())
 	}
 }

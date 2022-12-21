@@ -1,6 +1,6 @@
 [package]
 name = "sor_logparser"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Shirley Chung <shirley@mail.kway.com.tw>"]
 edition = "2018"
 
