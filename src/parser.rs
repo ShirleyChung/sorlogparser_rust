@@ -4,6 +4,7 @@ use std::fmt;
 use chrono::prelude::*;
 use std::fs::File;
 use std::io::prelude::*;
+use chrono::LocalResult::Single;
 
 // 每一筆資料由 string array組成每一個欄位，原資料ReqOrd, 以及相關的log
 pub struct Rec {
@@ -37,8 +38,9 @@ impl Rec {
 			let ts_toks : Vec<String> = self.reqs_vec[3].split('.').map(|s| s.to_string()).collect();
 			if ts_toks.len() > 1 {
 				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
-					let datetime: DateTime<Local> = Local.timestamp(u_secs, 0);
-					dt = datetime.format("%Y-%m-%d %H:%M:%S:").to_string() + &ts_toks[1];
+					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
+						dt = datetime.format("%Y-%m-%d %H:%M:%S:").to_string() + &ts_toks[1];
+					}
 				}
 			}
 		}

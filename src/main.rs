@@ -7,8 +7,8 @@ use std::fs::File;
 mod parser;
 use crate::parser::*;
 
-mod rpt_parser;
-use crate::rpt_parser::*;
+//mod rpt_parser;
+//use crate::rpt_parser::*;
 
 mod fileread;
 use crate::fileread::*;
@@ -21,9 +21,9 @@ use crate::fileread::*;
 struct Options {
 	/// Target SorReqOrd.log
 	filepath: String, // Log file path
-	/// Log file parsing
-	#[structopt(short="ml", long="mllogfile", default_value = "MLStkRpt.log")]
-	mlrptlog : String,
+//
+//	#[structopt(short="m", long="mllogfile", default_value = "MLStkRpt.log")]
+//	mlrptlog : String,
 	/// Please specify TableName:FieldName:SearchValue; ex: -f TwsNew:SorRID:100001, using "," to connect multiple conditions
 	#[structopt(short="f", long="field", default_value = "")]
 	field   : String,
@@ -45,7 +45,7 @@ struct Options {
 /// 將其讀入陣列以便解析
 fn main() -> Result<()> {
 	let options = Options::from_args();
-
+	// 解析SorReqOrd.log
 	if !options.filepath.is_empty() {
 		if let Ok(f) = File::open(&options.filepath) {
 			let mut reader = BufReader::new(f);
@@ -75,7 +75,9 @@ fn main() -> Result<()> {
 		} else {
 			println!("error opening {}", options.filepath);
 		}
-	} else if !options.mlrptlog.is_empty() {
+	// 解析MLStkRpt.log
+	}
+/*                else if !options.mlrptlog.is_empty() {
 		if let Ok(f) = File::open(&options.mlrptlog) {
 			let mut reader = BufReader::new(f);
 			let mut rptparer = RptParser::new();
@@ -86,8 +88,9 @@ fn main() -> Result<()> {
 		} else {
 			println!("error opening {}", options.mlrptlog);
 		}
-	} else {
-		println!("Need SorReqOrd.log or ml_log");
+	} */
+                else {
+		println!("Need SorReqOrd.log");
 	}
 	
 	Ok(())

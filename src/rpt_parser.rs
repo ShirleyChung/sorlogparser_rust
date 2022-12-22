@@ -9,8 +9,6 @@ use std::fs::File;
 pub struct Rec {
 	time: String,
 	rptline: String,
-	brkno: String,
-	ordno: String,
 }
 impl Rec {
 	#[allow(dead_code)]
@@ -18,8 +16,6 @@ impl Rec {
 		Rec {
 			time: "".to_string(),
 			rptline: "".to_string(),
-			brkno: "".to_string(),
-			ordno: "".to_string(),
 		}
 	}	
 }

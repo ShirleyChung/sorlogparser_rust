@@ -4,7 +4,7 @@ use encoding::{Encoding, DecoderTrap};
 use encoding::all::{ BIG5_2003, GB18030, ISO_2022_JP };
 
 use crate::parser::Parser;
-use crate::rpt_parser::RptParser;
+//use crate::rpt_parser::RptParser;
 
 pub enum LineType<T> {
 	EndOfFile,
@@ -97,27 +97,53 @@ pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, en
 	parser.parse_line(&rec_tmp, &log_tmp);
 }
 
+//回報LOG檔解析
+/*  example:
+111/12/20 08:30:04.110<r<1GA2h000100368522330  005100000000001S0020083004111000000000001020000 00079000437540              
+111/12/20 08:30:04.111>s>ACK
+111/12/20 08:30:04.111<r<2QA32000100245185263  001415000000001S0420083003944000000000001020000 02880000000  0              
+111/12/20 08:30:04.112>s>ACK
+*/
+/*
+pub enum RptType<T> {
+	EndOfFile,
+	Deal(T),
+	Order(T),
+	Empty,
+}
+
+fn read_rpt_line<R: Read>(reader: &mut BufReader<R>, encoding: &EncodingType) -> RptType<String> {
+	let mut line_buf = Vec::<u8>::new();
+	let mut line = String::new();
+	// 讀第一行
+	line_buf.clear();
+	match reader.read_until(b'\n', &mut line_buf) {
+		Ok(sz_line) => {
+			if sz_line == 0 {
+				return RptType::EndOfFile;
+			}
+			RptType::Empty
+		},
+		Err(_)=> RptType::EndOfFile,
+	}
+}
 /// line by line with log 解析
 pub fn read_rpt_log<R: Read>(reader: &mut BufReader<R>, parser: &mut RptParser, encoding_opt: &str) {
 	let mut rec_tmp: String = "".to_string();
 	let mut log_tmp: String = "".to_string();
 	let encoding = get_encoding_constant(encoding_opt);
 	loop {
-		match get_reader_line(reader, &encoding) {
+		match read_rpt_line(reader, &encoding) {
 			// 先把讀到的記錄暫存起來，為要和log一起parse
-			LineType::Rec(line) => {
-				if !rec_tmp.is_empty() {
-					parser.parse_line(&rec_tmp, &log_tmp);
-					log_tmp.clear();
-				}
-				rec_tmp = line;
+			RptType::Order(line) => {
+			},
+			RptType::Deal(line) => {
 			},
 			// log 和 ext log 串成一串，等待rec再一併被parse
-			LineType::Log(log)    => log_tmp = log_tmp + &log,
-			LineType::LogExt(log) => log_tmp = log_tmp + &log,
-			LineType::Empty     =>  continue,
-			LineType::EndOfFile =>  break,
+			RptType::Empty     =>  continue,
+			RptType::EndOfFile =>  break,
 		};
 	};
 	parser.parse_line(&rec_tmp, &log_tmp);
 }
+*/
