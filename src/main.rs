@@ -57,6 +57,11 @@ fn main() -> Result<()> {
 			// 解析完了, 顯示解析結果
 			println!("-=summary=-\n{}", parser.get_info());
 			
+			let unlinkreqs_info = parser.list_unlink_req();
+			if !unlinkreqs_info.is_empty() {
+				println!("there are unlink reqs:\n{}", unlinkreqs_info);
+			}
+
 			// 搜尋指定的目標
 			if !options.field.is_empty() {
 				let savepath = if options.save {

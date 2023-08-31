@@ -8,6 +8,7 @@ pub struct Rec {
 	reqs_vec: Vec<String>,
 	line    : String,
 	log     : String,
+	linked  : bool,
 }
 
 fn get_ordst(st: i32) -> String {
@@ -86,8 +87,8 @@ type OrdRecMap   = HashMap<String, LinkedList<Rec>>;// OrdKey-Rec
 
 pub struct OrderRec {
 	tables : HashMap<String, TableRec>, // table_name-table fields
-	reqs   : ReqRecMap,
-	ords   : OrdRecMap,
+	reqs   : ReqRecMap,                 // 所有的req
+	ords   : OrdRecMap,                 // 所有的ord 
 	req2ord: HashMap<String, String>,   // req對應到的ord
 }
 
@@ -149,6 +150,12 @@ impl OrderRec {
 				_ => (),
 			}
 			self.req2ord.insert(reqkey.to_string(), key.to_string());
+			match self.reqs.get(reqkey) {
+				Some(req) => {
+					req.linked = true;
+				},
+				_ => (),
+			}
 			return ("Ord", key.to_string())
 		}
 		else {

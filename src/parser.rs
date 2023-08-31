@@ -11,6 +11,7 @@ pub struct Rec {
 	reqs_vec: Vec<String>,
 	line    : String,
 	log     : String,
+	linked  : bool,
 }
 
 fn get_ordst(st: i32) -> String {
@@ -135,18 +136,18 @@ impl OrderRec {
 		let hdr = &toks[0];	
 		if key == "-" { // 沒有key值的，是表格
 			let table_name = &toks[2];
-			let mut tabrec = self.tables.entry(table_name.to_string()).or_insert(TableRec::new());
+			let tabrec = self.tables.entry(table_name.to_string()).or_insert(TableRec::new());
 			for (idx, name) in toks.iter().enumerate() { // 插入每個Provider的Field
 				tabrec.index.insert(name.to_string(), idx);
 			}
 			tabrec.recs = toks.to_vec();
 		}
 		else if "Req" == hdr {  // 依key將記錄儲存到hashmap中
-			self.reqs.insert(key.to_string(), Rec{reqs_vec: toks.to_vec(), line: line.to_string(), log: log.to_string()});
+			self.reqs.insert(key.to_string(), Rec{reqs_vec: toks.to_vec(), line: line.to_string(), log: log.to_string(), linked: false});
 			return ("Req", key.to_string())
 		}
 		else if "Ord" == hdr {	
-			let rec = Rec{reqs_vec: toks.to_vec(), line: line.to_string(), log: log.to_string()};
+			let rec = Rec{reqs_vec: toks.to_vec(), line: line.to_string(), log: log.to_string(), linked: false};
 			self.ords.entry(key.to_string()).or_insert(LinkedList::<Rec>::new()).push_back(rec);
 			// 檢查Req-Ord對應是否有覆蓋的情況
 			let reqkey = &toks[4];
@@ -159,6 +160,12 @@ impl OrderRec {
 				_ => (),
 			}
 			self.req2ord.insert(reqkey.to_string(), key.to_string());
+			match self.reqs.get_mut(reqkey) {
+				Some(req) => {
+					req.linked = true;
+				},
+				_ => (),
+			}
 			return ("Ord", key.to_string())
 		}
 		else {
@@ -420,11 +427,26 @@ impl Parser {
 			self.info = format!("tables:\t{}\nreqs:\t{}\nords:\t{}\ndeals:\t{}\nfailed:\t{}\n", 
 				self.ord_rec.tables.len(), self.ord_rec.reqs.len(), self.ord_rec.ords.len(),
 				deals, fails);
+			
 			&self.info
 		}
 		else {
 			&self.info
 		}
+	}
+
+	pub fn list_unlink_req(&mut self) -> String {
+		let unlinked_req: Vec<(&String, &Rec)> = self.ord_rec.reqs.iter().filter(|v| !v.1.linked ).collect();
+		let mut ret = String::new();
+		if !unlinked_req.is_empty() {
+			let cnt_str = format!("count:{}", unlinked_req.len());
+			ret.push_str(&cnt_str);
+		}
+		for (k, _) in unlinked_req {
+			let reqinfo = format!("reqkey:{}\n", k);
+			ret.push_str(&reqinfo);
+		}
+		ret
 	}
 
 	/// 解析每一行的內容, 並儲存到HashMap
