@@ -96,7 +96,7 @@ pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, en
 			LineType::EndOfFile =>  break,
 		};
 		cnt = cnt + 1;
-		if cnt % 100 == 0 {
+		if cnt % 1000 == 0 {
 			print!(".");
 		}
 	};
