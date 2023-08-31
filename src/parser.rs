@@ -439,7 +439,7 @@ impl Parser {
 		let unlinked_req: Vec<(&String, &Rec)> = self.ord_rec.reqs.iter().filter(|v| !v.1.linked ).collect();
 		let mut ret = String::new();
 		if !unlinked_req.is_empty() {
-			let cnt_str = format!("count:{}", unlinked_req.len());
+			let cnt_str = format!("count:{}\n", unlinked_req.len());
 			ret.push_str(&cnt_str);
 		}
 		for (k, _) in unlinked_req {
