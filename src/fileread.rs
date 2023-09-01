@@ -74,11 +74,10 @@ fn get_encoding_constant(encoding_opt: &str) -> EncodingType {
 
 /// line by line with log 解析
 pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, encoding_opt: &str) {
-	print!("parsing data");
+	print!("parsing data...\n");
 	let mut rec_tmp: String = "".to_string();
 	let mut log_tmp: String = "".to_string();
 	let encoding = get_encoding_constant(encoding_opt);
-	let mut cnt = 0;
 	loop {
 		match get_reader_line(reader, &encoding) {
 			// 先把讀到的記錄暫存起來，為要和log一起parse
@@ -95,13 +94,8 @@ pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, en
 			LineType::Empty     =>  continue,
 			LineType::EndOfFile =>  break,
 		};
-		cnt = cnt + 1;
-		if cnt % 1000 == 0 {
-			print!(".");
-		}
 	};
 	parser.parse_line(&rec_tmp, &log_tmp);
-	println!("\n");
 }
 
 //回報LOG檔解析

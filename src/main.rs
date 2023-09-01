@@ -39,6 +39,9 @@ struct Options {
 	/// path of the saving file
 	#[structopt(short="o", long="output", default_value = "")]
 	savepath: String,
+	/// statistic a field's values
+	#[structopt(short="t", long="statistic", default_value = "")]
+	table_field: String,
 }
 
 /// 第一參數指定檔案
@@ -76,6 +79,16 @@ fn main() -> Result<()> {
 					"".to_string()
 				};
 				parser.find_by_conditions(&options.field, &savepath, &options.hide);
+			}
+
+			// 統計某個欄位
+			if !options.table_field.is_empty() {
+				let params: Vec<&str> = options.table_field.split(':').collect();
+				if params.len() > 1 {
+					println!("{}", parser.statistic_field(params[0], params[1]));
+				} else {
+					println!("please correct -s format.  eg.: -s TwfNew:user");
+				}
 			}
 		} else {
 			println!("error opening {}", options.filepath);

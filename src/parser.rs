@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::LinkedList;
 use std::fmt;
 use chrono::prelude::*;
@@ -197,16 +198,51 @@ impl OrderRec {
 	}
 	/// 取得該記錄中，指定欄位的值
 	fn get_value(&self, rec: &Rec, field_name: &str) -> String {
-		match self.tables.get(&rec.reqs_vec[2]) {
-			Some(tabrec) => { 
-				match tabrec.index.get(field_name) {
+		if rec.reqs_vec.len() > 2 {
+			match self.tables.get(&rec.reqs_vec[2]) {
+				Some(tabrec) => { 
+					match tabrec.index.get(field_name) {
+						Some(idx) => {
+							return rec.reqs_vec[*idx].to_string();
+						},
+						_=> return String::new(),
+					};
+				},
+				_=> return String::new(),
+			};
+		} else {
+			return String::new();
+		}
+	}
+	/// 統計某一欄位的數量: 例如TwfNew總共有多少個user
+	pub fn statistic_field(&self, table_name: &str, field_name: &str) -> String {
+		let mut field_set = HashSet::<String>::new();
+		match self.tables.get(table_name) { // 先從tables中, 找到要的table(例如TwfNew)
+			Some(tabrec) => {
+				match tabrec.index.get(field_name) {  // 有找到table的話, 再定位出field的index(例如user可能是在4之類)
 					Some(idx) => {
-						return rec.reqs_vec[*idx].to_string();
+						for req in &self.reqs { // 借用結構的reqs成員避免move
+							let rec = req.1;
+							if rec.reqs_vec.len() > 2 {
+								if rec.reqs_vec[2] == table_name {
+									let val = rec.reqs_vec[*idx].to_string();
+									if !val.is_empty() {
+										field_set.insert( val );
+									}
+								}
+							}
+						}
+						let mut ret= format!("there are totally {} {} of {}:\n", field_set.len(), field_name, table_name);
+						for user in field_set {							
+							ret.push_str(&user);
+							ret.push_str("\n");
+						}
+						return ret;
 					},
-					_=> return String::new(),
+					_=> return format!("there is no {} field", field_name),
 				};
 			},
-			_=> return String::new(),
+			_=> return format!("there is no {} table", table_name),
 		};
 	}
 	/// 取得該筆LinkedList的彙總說明
@@ -424,7 +460,7 @@ impl Parser {
 					}
 				}
 			}
-			self.info = format!("tables:\t{}\nreqs:\t{}\nords:\t{}\ndeals:\t{}\nfailed:\t{}\n", 
+			self.info = format!("tables:\t{}\nreqs:\t{}\nords:\t{}\ndeals:\t{}\ninvalid:\t{}\n", 
 				self.ord_rec.tables.len(), self.ord_rec.reqs.len(), self.ord_rec.ords.len(),
 				deals, fails);
 			
@@ -442,11 +478,23 @@ impl Parser {
 			let cnt_str = format!("count:{}\n", unlinked_req.len());
 			ret.push_str(&cnt_str);
 		}
-		for (k, _) in unlinked_req {
-			let reqinfo = format!("reqkey:{}\n", k);
-			ret.push_str(&reqinfo);
+		for (k, r) in unlinked_req {
+			let reqinfo = format!("{} reqkey:{}", r.get_timestamp(), k);
+			ret.push_str(&reqinfo);			
+			let user = self.ord_rec.get_value(r, "User");
+			if !user.is_empty() {
+				let desc_user = format!(", user: {}", user);
+				ret.push_str(&desc_user);
+			}
+
+			ret.push_str("\n");
 		}
 		ret
+	}
+
+	/// 統計某一欄位的數量: 例如TwfNew總共有多少個user
+	pub fn statistic_field(&self, table_name: &str, field_name: &str) -> String {
+		return self.ord_rec.statistic_field(table_name, field_name);
 	}
 
 	/// 解析每一行的內容, 並儲存到HashMap
