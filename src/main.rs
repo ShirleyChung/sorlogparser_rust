@@ -7,9 +7,6 @@ use std::fs::File;
 mod parser;
 use crate::parser::*;
 
-//mod rpt_parser;
-//use crate::rpt_parser::*;
-
 mod fileread;
 use crate::fileread::*;
 
@@ -42,6 +39,9 @@ struct Options {
 	/// statistic a field's values
 	#[structopt(short="t", long="statistic", default_value = "")]
 	table_field: String,
+	/// flow in seconds
+	#[structopt(short="w", long="flow")]
+	show_flow: bool,
 }
 
 /// 第一參數指定檔案
@@ -90,6 +90,12 @@ fn main() -> Result<()> {
 					println!("please correct -s format.  eg.: -s TwfNew:user");
 				}
 			}
+
+			// 顯示每秒流量
+			if options.show_flow {
+				println!("{}", parser.req_flow_statistic());
+			}
+
 		} else {
 			println!("error opening {}", options.filepath);
 		}

@@ -41,7 +41,7 @@ impl Rec {
 			if ts_toks.len() > 1 {
 				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
 					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
-						dt = datetime.format("%Y-%m-%d %H:%M:%S:").to_string() + &ts_toks[1];
+						dt = datetime.format("%Y%m%d%H%M%S.").to_string() + &ts_toks[1];
 					}
 				}
 			}
@@ -471,6 +471,7 @@ impl Parser {
 		}
 	}
 
+	/// 回傳未連結的Req的統計資料
 	pub fn list_unlink_req(&mut self) -> String {
 		let unlinked_req: Vec<(&String, &Rec)> = self.ord_rec.reqs.iter().filter(|v| !v.1.linked ).collect();
 		let mut ret = String::new();
@@ -488,6 +489,38 @@ impl Parser {
 			}
 
 			ret.push_str("\n");
+		}
+		ret
+	}
+
+	pub fn req_flow_statistic(&self) -> String {
+		let mut ret = String::new();
+		// 建一個統計流量的hasp map
+		let mut flow_map = HashMap::<i64, i32>::new();
+		// 取全部的req, 取出其中的timestamp, 拆出整數部份(秒), 填入haspmap中統計次數
+		for req in &self.ord_rec.reqs {
+			if req.1.reqs_vec.len() > 3 {
+				let tm = &req.1.reqs_vec[3];
+				let parts: Vec<&str> = tm.split('.').collect();
+				if let Ok(int_part) = parts[0].parse::<i64>() {
+					let cnt = match flow_map.get(&int_part) {
+						Some(v) => v.to_owned(),
+						_ => 0,
+					};
+					flow_map.insert(int_part, cnt + 1);
+				}
+			}
+		};
+		// 將hashmap轉為Vec
+		let mut sort_map = flow_map.into_iter().collect::<Vec<_>>();
+		// 將Vec排序
+		sort_map.sort_by(|a, b| a.0.cmp(&b.0));
+		// 印出結果
+		for (t, cnt) in sort_map {
+			if let Single(datetime) = Local.timestamp_opt(t, 0) {
+				let tmstr = format!("{}, {},{}\n", t, datetime.format("%Y%m%d%H%M%S"), cnt);
+				ret.push_str(&tmstr);
+			}
 		}
 		ret
 	}
