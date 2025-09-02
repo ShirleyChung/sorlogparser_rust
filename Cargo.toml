@@ -2,9 +2,11 @@
 name = "sor_logparser"
 version = "1.1.0"
 authors = ["Shirley Chung <shirley@mail.kway.com.tw>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 structopt = "*"
 encoding  = "*"
 chrono    = "*"
+slint = "1.5.1"
+rfd = "0.14.1"
