@@ -10,6 +10,8 @@ use crate::parser::*;
 mod fileread;
 use crate::fileread::*;
 
+pub mod gui;
+
 /// SorReqOrd Parser
 /// Retrieve record of specified fields from given SorReqOrd.log
 
@@ -17,7 +19,7 @@ use crate::fileread::*;
 #[derive(StructOpt)]
 struct Options {
 	/// Target SorReqOrd.log
-	filepath: String, // Log file path
+	filepath: Option<String>, // Log file path
 //
 //	#[structopt(short="m", long="mllogfile", default_value = "MLStkRpt.log")]
 //	mlrptlog : String,
@@ -29,10 +31,10 @@ struct Options {
 	encoding: String,
 	/// save the output contents
 	#[structopt(short="s", long="save")]
-	save: bool,	
+	save: bool,
 	/// do not print the result list
 	#[structopt(short="h", long="hide")]
-	hide: bool,		
+	hide: bool,
 	/// path of the saving file
 	#[structopt(short="o", long="output", default_value = "")]
 	savepath: String,
@@ -42,15 +44,24 @@ struct Options {
 	/// flow in seconds
 	#[structopt(short="w", long="flow")]
 	show_flow: bool,
+    /// Launch the GUI
+    #[structopt(long)]
+    gui: bool,
 }
 
 /// 第一參數指定檔案
 /// 將其讀入陣列以便解析
 fn main() -> Result<()> {
 	let options = Options::from_args();
+
+    if options.gui {
+        gui::run();
+        return Ok(());
+    }
+
 	// 解析SorReqOrd.log
-	if !options.filepath.is_empty() {
-		if let Ok(f) = File::open(&options.filepath) {
+	if let Some(filepath) = options.filepath {
+		if let Ok(f) = File::open(&filepath) {
 			let mut reader = BufReader::new(f);
 			let mut parser = Parser::new();
 
@@ -59,7 +70,7 @@ fn main() -> Result<()> {
 
 			// 解析完了, 顯示解析結果
 			println!("-=summary=-\n{}", parser.get_info());
-			
+
 			let unlinkreqs_info = parser.list_unlink_req();
 			if !unlinkreqs_info.is_empty() {
 				println!("there are unlink reqs:\n{}", unlinkreqs_info);
@@ -97,7 +108,7 @@ fn main() -> Result<()> {
 			}
 
 		} else {
-			println!("error opening {}", options.filepath);
+			println!("error opening {}", filepath);
 		}
 	// 解析MLStkRpt.log
 	}
@@ -105,7 +116,7 @@ fn main() -> Result<()> {
 		if let Ok(f) = File::open(&options.mlrptlog) {
 			let mut reader = BufReader::new(f);
 			let mut rptparer = RptParser::new();
-			
+
 			// 依每行解析
 			println!("parsing {}", options.mlrptlog);
 			read_rpt_log(&mut reader, &mut rptparer, &options.encoding);
@@ -116,7 +127,6 @@ fn main() -> Result<()> {
                 else {
 		println!("Need SorReqOrd.log");
 	}
-	
+
 	Ok(())
 }
-
