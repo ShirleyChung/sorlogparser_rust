@@ -74,8 +74,8 @@ impl Rec {
 }
 
 pub struct TableRec {
-	index: HashMap<String, usize>,
-	recs : Vec<String>,
+	pub index: HashMap<String, usize>,
+	pub recs : Vec<String>,
 }
 
 impl TableRec {
@@ -97,9 +97,9 @@ type ReqRecMap   = HashMap<String, Rec>;            // ReqKey-Rec
 type OrdRecMap   = HashMap<String, LinkedList<Rec>>;// OrdKey-Rec
 
 pub struct OrderRec {
-	tables : HashMap<String, TableRec>, // table_name-table fields
-	reqs   : ReqRecMap,
-	ords   : OrdRecMap,
+	pub tables : HashMap<String, TableRec>, // table_name-table fields
+	pub reqs   : ReqRecMap,
+	pub ords   : OrdRecMap,
 	req2ord: HashMap<String, String>,   // req對應到的ord
 }
 
@@ -197,7 +197,7 @@ impl OrderRec {
 		reqord_list
 	}
 	/// 取得該記錄中，指定欄位的值
-	fn get_value(&self, rec: &Rec, field_name: &str) -> String {
+	pub fn get_value(&self, rec: &Rec, field_name: &str) -> String {
 		if rec.reqs_vec.len() > 2 {
 			match self.tables.get(&rec.reqs_vec[2]) {
 				Some(tabrec) => { 
@@ -420,7 +420,7 @@ impl OrderRec {
 
 // 4. 解析管理
 pub struct Parser {
-	ord_rec : OrderRec,
+	pub ord_rec : OrderRec,
 	info    : String,
 	prevkey : (&'static str, String)
 }

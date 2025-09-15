@@ -7,48 +7,50 @@ use crate::fileread::read_data_log;
 
 // 使用 slint! 巨集來定義 GUI
 slint::slint! {
-    // 從 "std-widgets.slint" 導入標準元件
-    import { Button, ScrollView, TextEdit } from "std-widgets.slint";
+    import { Button, ScrollView } from "std-widgets.slint";
 
-    // 定義主視窗元件 AppWindow
     export component AppWindow inherits Window {
-        // 設定視窗標題
         title: "SOR Log Parser";
-        // 設定視窗寬度
-        width: 800px;
-        // 設定視窗高度
-        height: 600px;
+        width: 1024px;
+        height: 768px;
 
-        // 定義一個可以在 Rust 和 Slint 之間雙向綁定的屬性
-        // 用於顯示解析結果
-        in-out property <string> output_text: "Parsed output will be shown here.";
+        in-out property <[string]> column_data: [];
+        in-out property <[[string]]> row_data: [[]];
 
-        // 定義一個回呼函數，用於觸發檔案選擇對話框
         callback open_file_dialog();
 
-        // 使用垂直佈局
         VerticalLayout {
-            // 新增一個按鈕
             Button {
                 text: "Open Log File";
-                // 按鈕被點擊時，觸發 open_file_dialog 回呼
                 clicked => { root.open_file_dialog() }
             }
-            // 新增一個可滾動的視圖
             ScrollView {
-                width: 100%;
-                height: 100%;
-                // 在可滾動視圖中新增一個文字編輯區
-                TextEdit {
-                    // 綁定 output_text 屬性到文字編輯區的 text 屬性
-                    text: root.output_text;
-                    // 設定為唯讀
-                    read-only: true;
+                VerticalLayout {
+                    // Header
+                    HorizontalLayout {
+                        padding: 5px;
+                        for header_text in column_data : Text {
+                            text: header_text;
+                            width: 120px; // Fixed width for alignment
+                        }
+                    }
+                    // Rows
+                    for row in row_data : HorizontalLayout {
+                        padding: 5px;
+                        for cell_text in row : Text {
+                            text: cell_text;
+                            width: 120px; // Fixed width for alignment
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+use slint::{ModelRc, SharedString, VecModel};
+use std::rc::Rc;
+use std::collections::HashSet;
 
 // GUI 的主函數
 pub fn run() {
@@ -72,24 +74,39 @@ pub fn run() {
                     // 讀取並解析日誌檔案，預設使用 BIG5 編碼
                     read_data_log(&mut reader, &mut parser, "BIG5");
 
-                    // 準備一個字串來存放結果
-                    let mut summary = String::new();
-                    summary.push_str("-=summary=-\n");
-                    summary.push_str(parser.get_info());
-                    summary.push_str("\n");
+                    // 1. Extract Column Headers
+                    let mut column_set = HashSet::new();
+                    for table in parser.ord_rec.tables.values() {
+                        for key in table.index.keys() {
+                            column_set.insert(key.clone());
+                        }
+                    }
+                    let mut sorted_headers: Vec<SharedString> = column_set.into_iter().map(|s| s.into()).collect();
+                    sorted_headers.sort();
+                    let header_strings = sorted_headers.clone();
+                    ui.set_column_data(Rc::new(VecModel::from(sorted_headers)).into());
 
-                    // 獲取未連結的請求資訊
-                    let unlinkreqs_info = parser.list_unlink_req();
-                    if !unlinkreqs_info.is_empty() {
-                        summary.push_str("there are unlink reqs:\n");
-                        summary.push_str(&unlinkreqs_info);
+                    // 2. Extract Row Data
+                    let mut all_rows = Vec::new();
+                    let all_recs = parser.ord_rec.reqs.values()
+                        .chain(parser.ord_rec.ords.values().flatten());
+
+                    for rec in all_recs {
+                        let mut row_vec: Vec<SharedString> = Vec::new();
+                        for header in &header_strings {
+                            let value = parser.ord_rec.get_value(rec, header.as_str());
+                            row_vec.push(value.into());
+                        }
+                        all_rows.push(Rc::new(VecModel::from(row_vec)).into());
                     }
 
-                    // 更新 GUI 的 output_text 屬性
-                    ui.set_output_text(summary.into());
+                    ui.set_row_data(Rc::new(VecModel::from(all_rows)).into());
+
                 } else {
-                    // 如果檔案開啟失敗，顯示錯誤訊息
-                    ui.set_output_text(format!("Error opening file: {}", path.display()).into());
+                    // Handle file open error if necessary, maybe with a dialog
+                    // For now, we'll just clear the table
+                    ui.set_column_data(Rc::new(VecModel::from(Vec::<SharedString>::new())).into());
+                    ui.set_row_data(Rc::new(VecModel::from(Vec::<ModelRc<SharedString>>::new())).into());
                 }
             }
         }
