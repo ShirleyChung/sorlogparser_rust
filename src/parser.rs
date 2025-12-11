@@ -655,6 +655,7 @@ impl Parser {
 							
 							let date = req.get_date();
 							let time = req.get_time();
+							let fromuid = self.ord_rec.get_value(req, "FromUID");
 							let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
 							let mut ivac = self.ord_rec.get_value(req, "IvacNo");
 							let digsgn = req.get_digsgn();
@@ -674,7 +675,8 @@ impl Parser {
 							}
 							
 							let ivac_padded = format!("{:0>7}", ivac);
-							let line = format!("|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, time, digsgn);
+							let fromuid_padded = format!("{:>15}", fromuid);
+							let line = format!("|{}|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, fromuid_padded, time, digsgn);
 							ret.push_str(&line);
 						}
 					}
