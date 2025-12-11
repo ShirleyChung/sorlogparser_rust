@@ -1,8 +1,9 @@
 use structopt::StructOpt;
 use std::io::*;
-use std::io::{BufReader};
-//use std::io::prelude::*;
-use std::fs::File;
+use std::io::{BufReader, Write};
+use std::fs::{File, self};
+use std::path::Path;
+use chrono::Local;
 
 mod parser;
 use crate::parser::*;
@@ -20,9 +21,6 @@ pub mod gui;
 struct Options {
 	/// Target SorReqOrd.log
 	filepath: Option<String>, // Log file path
-//
-//	#[structopt(short="m", long="mllogfile", default_value = "MLStkRpt.log")]
-//	mlrptlog : String,
 	/// Please specify TableName:FieldName:SearchValue; ex: -f TwsNew:SorRID:100001, using "," to connect multiple conditions
 	#[structopt(short="f", long="field", default_value = "")]
 	field   : String,
@@ -47,6 +45,145 @@ struct Options {
     /// Launch the GUI
     #[structopt(long)]
     gui: bool,
+	/// scan date-named directories and parse SorReqOrd.log files
+	#[structopt(short="d", long="dir", default_value = ".")]
+	scan_dir: String,
+	/// output to PKILog-{date}.log file
+	#[structopt(long="pki")]
+	pki_output: bool,
+}
+
+/// 檢查目錄名是否為日期格式 (8位數字)
+fn is_date_directory(name: &str) -> bool {
+	name.len() == 8 && name.chars().all(|c| c.is_numeric())
+}
+
+/// 取得指定目錄下所有日期格式命名的子目錄
+fn find_date_directories(dir_path: &str) -> Result<Vec<String>> {
+	let mut date_dirs = Vec::new();
+	let entries = fs::read_dir(dir_path)?;
+	
+	for entry in entries {
+		let entry = entry?;
+		let path = entry.path();
+		if path.is_dir() {
+			if let Some(name) = path.file_name() {
+				if let Some(name_str) = name.to_str() {
+					if is_date_directory(name_str) {
+						date_dirs.push(path.to_string_lossy().to_string());
+					}
+				}
+			}
+		}
+	}
+	
+	date_dirs.sort();
+	Ok(date_dirs)
+}
+
+/// 處理單個SorReqOrd.log檔案
+fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool) -> Result<String> {
+	let mut output = String::new();
+	
+	if let Ok(f) = File::open(filepath) {
+		let mut reader = BufReader::new(f);
+		let mut parser = Parser::new();
+		
+		read_data_log(&mut reader, &mut parser, encoding);
+		
+		if pki_mode {
+			// PKI 模式：輸出簡化格式
+			output = parser.get_pki_output();
+		} else {
+			// 普通模式：輸出詳細資訊
+			output.push_str("=== ");
+			output.push_str(filepath);
+			output.push_str(" ===\n");
+			output.push_str(parser.get_info());
+			output.push_str("\n");
+			
+			let unlinkreqs_info = parser.list_unlink_req();
+			if !unlinkreqs_info.is_empty() {
+				output.push_str("there are unlink reqs:\n");
+				output.push_str(&unlinkreqs_info);
+				output.push_str("\n");
+			}
+			output.push_str("\n");
+		}
+	} else {
+		output.push_str(&format!("error opening {}\n\n", filepath));
+	}
+	
+	Ok(output)
+}
+
+/// 掃描日期目錄並解析所有SorReqOrd.log
+fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool) -> Result<()> {
+	let date_dirs = match find_date_directories(base_dir) {
+		Ok(dirs) => dirs,
+		Err(e) => {
+			println!("Error reading directory {}: {}", base_dir, e);
+			return Ok(());
+		}
+	};
+	
+	if date_dirs.is_empty() {
+		println!("No date-named directories found in {}", base_dir);
+		return Ok(());
+	}
+	
+	let mut pki_output = String::new();
+	let mut found_logs = false;
+	
+	for dir in date_dirs {
+		let log_file = format!("{}\\SorReqOrd.log", dir);
+		
+		if Path::new(&log_file).exists() {
+			found_logs = true;
+			println!("Processing: {}", log_file);
+			match process_log_file(&log_file, encoding, use_pki) {
+				Ok(output) => {
+					if use_pki {
+						pki_output.push_str(&output);
+					} else {
+						print!("{}", output);
+					}
+				},
+				Err(e) => {
+					let err_msg = format!("Error processing {}: {}\n\n", log_file, e);
+					if use_pki {
+						pki_output.push_str(&err_msg);
+					} else {
+						print!("{}", err_msg);
+					}
+				}
+			}
+		}
+	}
+	
+	if !found_logs {
+		println!("No SorReqOrd.log files found in date directories");
+		return Ok(());
+	}
+	
+	// 若使用 -pki 選項，輸出到PKILog-{date}.log檔案
+	if use_pki && !pki_output.is_empty() {
+		let now = Local::now();
+		let date_str = now.format("%Y%m%d").to_string();
+		let output_file = format!("PKILog-{}.log", date_str);
+		
+		match File::create(&output_file) {
+			Ok(mut file) => {
+				match file.write_all(pki_output.as_bytes()) {
+					Ok(_) => println!("Output saved to: {}", output_file),
+					Err(e) => println!("Error writing to {}: {}", output_file, e),
+				}
+			},
+			Err(e) => println!("Error creating {}: {}", output_file, e),
+		}
+	}
+	
+	Ok(())
 }
 
 /// 第一參數指定檔案
@@ -58,6 +195,11 @@ fn main() -> Result<()> {
         gui::run();
         return Ok(());
     }
+
+	// 若未指定檔案參數，則掃描日期目錄
+	if options.filepath.is_none() {
+		return scan_and_parse_date_dirs(&options.scan_dir, &options.encoding, options.pki_output);
+	}
 
 	// 解析SorReqOrd.log
 	if let Some(filepath) = options.filepath {
@@ -110,22 +252,6 @@ fn main() -> Result<()> {
 		} else {
 			println!("error opening {}", filepath);
 		}
-	// 解析MLStkRpt.log
-	}
-/*                else if !options.mlrptlog.is_empty() {
-		if let Ok(f) = File::open(&options.mlrptlog) {
-			let mut reader = BufReader::new(f);
-			let mut rptparer = RptParser::new();
-
-			// 依每行解析
-			println!("parsing {}", options.mlrptlog);
-			read_rpt_log(&mut reader, &mut rptparer, &options.encoding);
-		} else {
-			println!("error opening {}", options.mlrptlog);
-		}
-	} */
-                else {
-		println!("Need SorReqOrd.log");
 	}
 
 	Ok(())

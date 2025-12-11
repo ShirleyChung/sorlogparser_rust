@@ -77,25 +77,36 @@ pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, en
 	print!("parsing data...\n");
 	let mut rec_tmp: String = "".to_string();
 	let mut log_tmp: String = "".to_string();
+	let mut digsgn_tmp: String = "".to_string();
 	let encoding = get_encoding_constant(encoding_opt);
 	loop {
 		match get_reader_line(reader, &encoding) {
 			// 先把讀到的記錄暫存起來，為要和log一起parse
 			LineType::Rec(line) => {
 				if !rec_tmp.is_empty() {
-					parser.parse_line(&rec_tmp, &log_tmp);
+					parser.parse_line(&rec_tmp, &log_tmp, &digsgn_tmp);
 					log_tmp.clear();
+					digsgn_tmp.clear();
 				}
 				rec_tmp = line;
 			},
 			// log 和 ext log 串成一串，等待rec再一併被parse
-			LineType::Log(log)    => log_tmp = log_tmp + &log,
+			LineType::Log(log)    => {
+				// 如果是以 ':' 開頭，提取最後一個欄位作為 digsgn
+				if log.starts_with(':') {
+					let parts: Vec<&str> = log.split('\x01').collect();
+					if !parts.is_empty() {
+						digsgn_tmp = parts[parts.len() - 1].to_string();
+					}
+				}
+				log_tmp = log_tmp + &log;
+			},
 			LineType::LogExt(log) => log_tmp = log_tmp + &log,
 			LineType::Empty     =>  continue,
 			LineType::EndOfFile =>  break,
 		};
 	};
-	parser.parse_line(&rec_tmp, &log_tmp);
+	parser.parse_line(&rec_tmp, &log_tmp, &digsgn_tmp);
 }
 
 //回報LOG檔解析

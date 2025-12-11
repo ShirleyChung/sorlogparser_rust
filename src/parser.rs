@@ -13,6 +13,7 @@ pub struct Rec {
 	line    : String,
 	log     : String,
 	linked  : bool,
+	digsgn  : String,  // 簽章資訊，從 ':' 開頭行的最後欄位提取
 }
 
 impl Rec {
@@ -22,6 +23,9 @@ impl Rec {
 	pub fn is_req(&self) -> bool {
 		self.get_field(0) == "Req"
 	}
+	pub fn get_digsgn(&self) -> &str {
+		&self.digsgn
+	}
 	pub fn get_timestamp(&self) -> String {
 		let mut dt = String::new();
 		if self.reqs_vec.len() > 3 {
@@ -30,6 +34,34 @@ impl Rec {
 				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
 					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
 						dt = datetime.format("%Y%m%d%H%M%S.").to_string() + ts_toks[1];
+					}
+				}
+			}
+		}
+		dt
+	}
+	pub fn get_date(&self) -> String {
+		let mut dt = String::new();
+		if self.reqs_vec.len() > 3 {
+			let ts_toks : Vec<&str> = self.reqs_vec[3].split('.').collect();
+			if ts_toks.len() > 1 {
+				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
+					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
+						dt = datetime.format("%Y%m%d").to_string();
+					}
+				}
+			}
+		}
+		dt
+	}
+	pub fn get_time(&self) -> String {
+		let mut dt = String::new();
+		if self.reqs_vec.len() > 3 {
+			let ts_toks : Vec<&str> = self.reqs_vec[3].split('.').collect();
+			if ts_toks.len() > 1 {
+				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
+					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
+						dt = datetime.format("%H%M%S").to_string();
 					}
 				}
 			}
@@ -134,7 +166,7 @@ impl OrderRec {
 			req2ord: HashMap::<String, String>::new(),
 		}
 	}
-	pub fn insert_rec(&mut self, toks: Vec<String>, line: &str, log: &str) -> (&'static str, String) {
+	pub fn insert_rec(&mut self, toks: Vec<String>, line: &str, log: &str, digsgn: &str) -> (&'static str, String) {
 		// 先提取所有需要的值，避免借用問題
 		let key_str = toks.get(1).cloned().unwrap_or_default();
 		let hdr = toks.get(0).cloned().unwrap_or_default();
@@ -149,11 +181,11 @@ impl OrderRec {
 			tabrec.recs = toks;
 		}
 		else if hdr == "Req" {  // 依key將記錄儲存到hashmap中
-			self.reqs.insert(key_str.clone(), Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false});
+			self.reqs.insert(key_str.clone(), Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()});
 			return ("Req", key_str)
 		}
 		else if hdr == "Ord" {	
-			let rec = Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false};
+			let rec = Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()};
 			self.ords.entry(key_str.clone()).or_insert(LinkedList::<Rec>::new()).push_back(rec);
 			// 檢查Req-Ord對應是否有覆蓋的情況
 			match self.req2ord.get(&reqkey_str) {
@@ -276,6 +308,9 @@ impl OrderRec {
 		info.status.push_str(&get_ordst(ordst).to_string());
 		info
 	}
+	
+
+	
 	/// 檢查rec是否符合條件
 	pub fn check_rec(&self, rec: &Rec, table_name: &str, key_index: usize, target: &str) -> Option<String> {
 		if  rec.reqs_vec.len() < 3 || rec.get_field(2) != table_name {
@@ -533,32 +568,115 @@ impl Parser {
 		return self.ord_rec.statistic_field(table_name, field_name);
 	}
 
+	/// 生成PKI格式輸出
+	/// 格式: |YYYYMMDD|BrkNo|Ivac(補0到7碼)|字元|HHMMSS|digsgn
+	pub fn get_pki_output(&self) -> String {
+		let mut ret = String::new();
+		for (_, req) in &self.ord_rec.reqs {
+			if req.is_req() {
+				let date = req.get_date();
+				let time = req.get_time();
+				let brk_no = self.ord_rec.get_value(req, "BrkNo");
+				let ivac = self.ord_rec.get_value(req, "IvacNo");
+				let req_kind = self.ord_rec.get_value(req, "ReqKind");
+				let digsgn = req.get_digsgn();
+				
+				// 根據 ReqKind 決定字元
+				let kind_char = match req_kind.as_str() {
+					"1" => "O",  // 新單
+					"4" => "C",  // 刪單
+					"2" | "3" => "M",  // 改量或改價
+					_ => ""
+				};
+				
+				// 補 IvacNo 到 7 位
+				let ivac_padded = format!("{:0>7}", ivac);
+				
+				let line = format!("|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, time, digsgn);
+				ret.push_str(&line);
+			}
+		}
+		ret
+	}
+
 	/// 解析每一行的內容, 並儲存到HashMap
-	pub fn parse_line(&mut self, line: &str, log: &str) {
+	pub fn parse_line(&mut self, line: &str, log: &str, digsgn: &str) {
 		let toks : Vec<String> = line.split('\x01').map(|s| s.to_string()).collect();
 
 		if toks.len() > 3 {
-			self.prevkey = self.ord_rec.insert_rec(toks, line, log);
+			self.prevkey = self.ord_rec.insert_rec(toks, line, log, digsgn);
 		} else {
 			//println!("log line: {}", line);
 		}
 	}
 
 	/// 從輸入中解析出所有條件
+	/// 支持 , (AND/交集) 和 | (OR/聯集) 運算符
+	/// 例如: TwfNew:Side:B|TwfChg:Side:B (聯集：符合其中一個條件)
+	/// 例如: TwfNew:Side:B,TwfChg:Side:B (交集：同時符合兩個條件)
 	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool) {
-		let mut list_of_list = None;
-		for cond in condstr.split(',') {
-			let toks : Vec<&str> = cond.split(':').collect();
-			if toks.len() > 2 {
-				match list_of_list {
-					Some(lol) => list_of_list = self.ord_rec.find_list(lol, toks[0], toks[1], toks[2]),
-					None => list_of_list = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide),
-				}					
-			} else {
-				println!("{} is not correct! please specify TableName:FieldName:Value", cond);
+		let mut final_result: Option<LinkedList<LinkedList<&Rec>>> = None;
+		
+		// 先按 ',' 分割交集條件組
+		for and_group in condstr.split(',') {
+			let mut or_result: LinkedList<LinkedList<&Rec>> = LinkedList::new();
+			let mut has_result = false;
+			
+			// 再按 '|' 分割聯集條件
+			for or_cond in and_group.split('|') {
+				let toks : Vec<&str> = or_cond.trim().split(':').collect();
+				if toks.len() > 2 {
+					if let Some(search_list) = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide) {
+						has_result = true;
+						// 將搜尋結果合併到 or_result（聯集操作）
+						for item in search_list {
+							or_result.push_back(item);
+						}
+					}
+				} else {
+					println!("{} is not correct! please specify TableName:FieldName:Value", or_cond);
+				}
 			}
-		};
-		match list_of_list {
+			
+			// 不同的 and_group 是交集 (AND)
+			if has_result {
+				final_result = match final_result {
+					Some(mut lol1) => {
+						// 對 lol1 進行過濾，只保留同時符合 or_result 中任何條件的項目
+						let mut filtered = LinkedList::<LinkedList<&Rec>>::new();
+						for item1 in lol1 {
+							for item2 in &or_result {
+								// 比較兩個 list 中的 req key
+								if let Some(req1) = item1.front() {
+									if let Some(req2) = item2.front() {
+										let key1 = req1.get_field(1);
+										let key2 = req2.get_field(1);
+										if key1 == key2 {
+											filtered.push_back(item1);
+											break;
+										}
+									}
+								}
+							}
+						}
+						if !filtered.is_empty() {
+							Some(filtered)
+						} else {
+							None
+						}
+					},
+					None => {
+						if !or_result.is_empty() {
+							Some(or_result)
+						} else {
+							None
+						}
+					}
+				};
+			}
+		}
+		
+		match final_result {
 			Some(ret) => {
 				println!("{} occurence found.", ret.len());
 				if !hide {
