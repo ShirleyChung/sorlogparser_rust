@@ -705,6 +705,7 @@ impl Parser {
 		// 先按 ',' 分割交集條件組
 		for and_group in condstr.split(',') {
 			let mut or_result: LinkedList<LinkedList<&Rec>> = LinkedList::new();
+			let mut seen_ords: HashSet<String> = HashSet::new();  // 用來去重（根據 Ord 記錄）
 			let mut has_result = false;
 			
 			// 再按 '|' 分割聯集條件
@@ -713,9 +714,24 @@ impl Parser {
 				if toks.len() > 2 {
 					if let Some(search_list) = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide) {
 						has_result = true;
-						// 將搜尋結果合併到 or_result（聯集操作）
+						// 將搜尋結果合併到 or_result（聯集操作），同時去重
 						for item in search_list {
-							or_result.push_back(item);
+							// 根據 Ord 記錄（訂單的標識）進行去重
+							if let Some(ord_rec) = item.iter().find(|rec| rec.get_field(0) == "Ord") {
+								let ord_key = format!("{}", ord_rec.get_field(1));  // Ord 的流水號
+								if seen_ords.insert(ord_key) {
+									// 首次見到這個訂單，加入結果
+									or_result.push_back(item);
+								}
+							} else {
+								// 如果沒有 Ord 記錄，根據第一筆 Req 去重
+								if let Some(req_rec) = item.front() {
+									let req_key = format!("{}", req_rec.get_field(1));
+									if seen_ords.insert(req_key) {
+										or_result.push_back(item);
+									}
+								}
+							}
 						}
 					}
 				} else {
