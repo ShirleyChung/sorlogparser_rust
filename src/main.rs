@@ -82,7 +82,7 @@ fn find_date_directories(dir_path: &str) -> Result<Vec<String>> {
 }
 
 /// 處理單個SorReqOrd.log檔案
-fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool) -> Result<String> {
+fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool, search_field: &str) -> Result<String> {
 	let mut output = String::new();
 	
 	if let Ok(f) = File::open(filepath) {
@@ -92,8 +92,16 @@ fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool) -> Result<St
 		read_data_log(&mut reader, &mut parser, encoding);
 		
 		if pki_mode {
-			// PKI 模式：輸出簡化格式
-			output = parser.get_pki_output();
+			// PKI 模式：執行搜尋或輸出所有記錄
+			if !search_field.is_empty() {
+				// 執行搜尋，find_by_conditions 會自動輸出到檔案
+				parser.find_by_conditions(search_field, "", &true, true);
+				// 搜尋已由 find_by_conditions 處理，此處返回空
+				return Ok(String::new());
+			} else {
+				// 沒有搜尋條件，返回所有記錄的 PKI 格式供上層累積
+				output = parser.get_pki_output();
+			}
 		} else {
 			// 普通模式：輸出詳細資訊
 			output.push_str("=== ");
@@ -118,7 +126,7 @@ fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool) -> Result<St
 }
 
 /// 掃描日期目錄並解析所有SorReqOrd.log
-fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool) -> Result<()> {
+fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, search_field: &str) -> Result<()> {
 	let date_dirs = match find_date_directories(base_dir) {
 		Ok(dirs) => dirs,
 		Err(e) => {
@@ -141,7 +149,7 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool) -> Re
 		if Path::new(&log_file).exists() {
 			found_logs = true;
 			println!("Processing: {}", log_file);
-			match process_log_file(&log_file, encoding, use_pki) {
+			match process_log_file(&log_file, encoding, use_pki, search_field) {
 				Ok(output) => {
 					if use_pki {
 						pki_output.push_str(&output);
@@ -189,16 +197,23 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool) -> Re
 /// 第一參數指定檔案
 /// 將其讀入陣列以便解析
 fn main() -> Result<()> {
-	let options = Options::from_args();
+	let mut options = Options::from_args();
 
     if options.gui {
         gui::run();
         return Ok(());
     }
 
+	// 若沒有任何輸入參數，設定預設值：目錄掃描 + 搜尋條件 + PKI 輸出
+	if options.filepath.is_none() && options.field.is_empty() && !options.pki_output && !options.save && !options.show_flow && options.table_field.is_empty() {
+		// 設定預設值
+		options.field = "TwfNew:SesName:SorAPI|TwfChg:SesName:SorAPI|FrfNew:SesName:SorAPI|FrfChg:SesName:SorAPI".to_string();
+		options.pki_output = true;
+	}
+
 	// 若未指定檔案參數，則掃描日期目錄
 	if options.filepath.is_none() {
-		return scan_and_parse_date_dirs(&options.scan_dir, &options.encoding, options.pki_output);
+		return scan_and_parse_date_dirs(&options.scan_dir, &options.encoding, options.pki_output, &options.field);
 	}
 
 	// 解析SorReqOrd.log
@@ -231,10 +246,24 @@ fn main() -> Result<()> {
 				} else {
 					"".to_string()
 				};
-				parser.find_by_conditions(&options.field, &savepath, &options.hide);
+				parser.find_by_conditions(&options.field, &savepath, &options.hide, options.pki_output);
 			}
 
-			// 統計某個欄位
+			// 若沒有搜尋條件但指定 --pki 時，輸出所有記錄的 PKI 格式到檔案
+		if options.pki_output && options.field.is_empty() {
+			let pki_output = parser.get_pki_output();
+			if !pki_output.is_empty() {
+				let now = chrono::Local::now();
+				let filename = format!("PKILog-{}.log", now.format("%Y%m%d"));
+				if let Ok(mut file) = File::create(&filename) {
+					let _ = file.write_all(pki_output.as_bytes());
+					println!("PKI output saved to: {}", filename);
+				}
+			}
+			return Ok(());
+		}
+
+		// 統計某個欄位
 			if !options.table_field.is_empty() {
 				let params: Vec<&str> = options.table_field.split(':').collect();
 				if params.len() > 1 {

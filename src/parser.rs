@@ -572,28 +572,113 @@ impl Parser {
 	/// 格式: |YYYYMMDD|BrkNo|Ivac(補0到7碼)|字元|HHMMSS|digsgn
 	pub fn get_pki_output(&self) -> String {
 		let mut ret = String::new();
-		for (_, req) in &self.ord_rec.reqs {
+		for (req_key, req) in &self.ord_rec.reqs {
 			if req.is_req() {
-				let date = req.get_date();
-				let time = req.get_time();
-				let brk_no = self.ord_rec.get_value(req, "BrkNo");
-				let ivac = self.ord_rec.get_value(req, "IvacNo");
 				let req_kind = self.ord_rec.get_value(req, "ReqKind");
-				let digsgn = req.get_digsgn();
 				
-				// 根據 ReqKind 決定字元
+				// 根據 ReqKind 決定字元，只輸出已知的 ReqKind
 				let kind_char = match req_kind.as_str() {
 					"1" => "O",  // 新單
 					"4" => "C",  // 刪單
 					"2" | "3" => "M",  // 改量或改價
-					_ => ""
+					_ => continue  // 未知 ReqKind，跳過該記錄
 				};
+				
+				let date = req.get_date();
+				let time = req.get_time();
+				let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
+				let mut ivac = self.ord_rec.get_value(req, "IvacNo");
+				let digsgn = req.get_digsgn();
+				
+				// 如果欄位為空，從該訂單的第一筆 Req 取值
+				if brk_no.is_empty() || ivac.is_empty() {
+					// 找到該 Req 對應的 Ord
+					if let Some(ord_key) = self.ord_rec.req2ord.get(req_key) {
+						// 取得該 Ord 的所有記錄
+						if let Some(ord_list) = self.ord_rec.ords.get(ord_key) {
+							// 找到第一筆 Req
+							if let Some(first_req_rec) = ord_list.iter().find(|rec| rec.get_field(0) == "Req") {
+								let first_req_key = first_req_rec.get_field(1);
+								if let Some((_, first_req)) = self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == first_req_key) {
+									// 如果 BrkNo 為空，從第一筆 Req 取值
+									if brk_no.is_empty() {
+										brk_no = self.ord_rec.get_value(first_req, "BrkNo");
+									}
+									// 如果 IvacNo 為空，從第一筆 Req 取值
+									if ivac.is_empty() {
+										ivac = self.ord_rec.get_value(first_req, "IvacNo");
+									}
+								}
+							}
+						}
+					}
+				}
 				
 				// 補 IvacNo 到 7 位
 				let ivac_padded = format!("{:0>7}", ivac);
 				
 				let line = format!("|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, time, digsgn);
 				ret.push_str(&line);
+			}
+		}
+		ret
+	}
+
+	/// 根據搜尋結果生成PKI格式輸出
+	/// list_of_list 是搜尋結果，包含所有符合條件的訂單
+	pub fn get_pki_output_from_search(&self, list_of_list: &LinkedList<LinkedList<&Rec>>) -> String {
+		let mut ret = String::new();
+		for list in list_of_list {
+			// 找到該訂單的第一筆 Req 作為備用欄位來源
+			let first_req_key = list.iter()
+				.find(|rec| rec.get_field(0) == "Req")
+				.map(|rec| rec.get_field(1))
+				.and_then(|key| self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == key).map(|(_, req)| req));
+			
+			// 遍歷每個訂單中的所有記錄，找出所有 Req 記錄
+			for rec in list {
+				if rec.get_field(0) == "Req" {
+					let req_key = rec.get_field(1);
+					
+					// 在 reqs 中查找對應的 Req 記錄
+					if let Some((_, req)) = self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == req_key) {
+						if req.is_req() {
+							let req_kind = self.ord_rec.get_value(req, "ReqKind");
+							
+							// 根據 ReqKind 決定字元，只輸出已知的 ReqKind
+							let kind_char = match req_kind.as_str() {
+								"1" => "O",  // 新單
+								"4" => "C",  // 刪單
+								"2" | "3" => "M",  // 改量或改價
+								_ => continue  // 未知 ReqKind，跳過該記錄
+							};
+							
+							let date = req.get_date();
+							let time = req.get_time();
+							let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
+							let mut ivac = self.ord_rec.get_value(req, "IvacNo");
+							let digsgn = req.get_digsgn();
+							
+							// 如果 BrkNo 為空，從第一筆 Req 取值
+							if brk_no.is_empty() {
+								if let Some(first_req) = first_req_key {
+									brk_no = self.ord_rec.get_value(first_req, "BrkNo");
+								}
+							}
+							
+							// 如果 IvacNo 為空，從第一筆 Req 取值
+							if ivac.is_empty() {
+								if let Some(first_req) = first_req_key {
+									ivac = self.ord_rec.get_value(first_req, "IvacNo");
+								}
+							}
+							
+							let ivac_padded = format!("{:0>7}", ivac);
+							let line = format!("|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, time, digsgn);
+							ret.push_str(&line);
+						}
+					}
+				}
 			}
 		}
 		ret
@@ -614,7 +699,7 @@ impl Parser {
 	/// 支持 , (AND/交集) 和 | (OR/聯集) 運算符
 	/// 例如: TwfNew:Side:B|TwfChg:Side:B (聯集：符合其中一個條件)
 	/// 例如: TwfNew:Side:B,TwfChg:Side:B (交集：同時符合兩個條件)
-	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool) {
+	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool, pki_output: bool) {
 		let mut final_result: Option<LinkedList<LinkedList<&Rec>>> = None;
 		
 		// 先按 ',' 分割交集條件組
@@ -641,7 +726,7 @@ impl Parser {
 			// 不同的 and_group 是交集 (AND)
 			if has_result {
 				final_result = match final_result {
-					Some(mut lol1) => {
+					Some(lol1) => {
 						// 對 lol1 進行過濾，只保留同時符合 or_result 中任何條件的項目
 						let mut filtered = LinkedList::<LinkedList<&Rec>>::new();
 						for item1 in lol1 {
@@ -679,12 +764,32 @@ impl Parser {
 		match final_result {
 			Some(ret) => {
 				println!("{} occurence found.", ret.len());
-				if !hide {
-					for list in &ret {
-						self.ord_rec.print_ord_list(&list);
+				if pki_output {
+					// PKI 模式：輸出符合條件的記錄的 PKI 格式
+					let pki_str = self.get_pki_output_from_search(&ret);
+					if !pki_str.is_empty() {
+						// 若沒有指定檔案名，自動產生
+						let output_file = if savefile.is_empty() {
+							let now = chrono::Local::now();
+							format!("PKILog-{}.log", now.format("%Y%m%d"))
+						} else {
+							savefile.to_string()
+						};
+						
+						if let Ok(mut file) = std::fs::File::create(&output_file) {
+							let _ = file.write_all(pki_str.as_bytes());
+							println!("PKI output saved to: {}", output_file);
+						}
 					}
+				} else {
+					// 普通模式：輸出詳細資訊
+					if !hide {
+						for list in &ret {
+							self.ord_rec.print_ord_list(&list);
+						}
+					}
+					self.save_to_file(&ret, savefile);
 				}
-				self.save_to_file(&ret, savefile);
 			},
 			None => println!("not found any matches"),
 		};
