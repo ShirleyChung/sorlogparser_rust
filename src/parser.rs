@@ -15,33 +15,21 @@ pub struct Rec {
 	linked  : bool,
 }
 
-fn get_ordst(st: i32) -> String {
-	match st {
-		6 => "委託傳送中".to_string(),
-		7 => "委託已傳送".to_string(),
-		90=> "委託成功".to_string(),
-		99 => "委託失敗".to_string(),
-		101 => "交易所已接受".to_string(),
-		110 => "部份成交".to_string(),
-		111 => "全部成交".to_string(),
-		120 => "交易所取消".to_string(),
-		_ => "未知".to_string(),
-	}
-}
-
-// Rec具有print的操作, 可將timestamp印出
 impl Rec {
+	fn get_field(&self, idx: usize) -> &str {
+		self.reqs_vec.get(idx).map(|s| s.as_str()).unwrap_or("")
+	}
 	pub fn is_req(&self) -> bool {
-		&self.reqs_vec[0] == "Req"
+		self.get_field(0) == "Req"
 	}
 	pub fn get_timestamp(&self) -> String {
 		let mut dt = String::new();
 		if self.reqs_vec.len() > 3 {
-			let ts_toks : Vec<String> = self.reqs_vec[3].split('.').map(|s| s.to_string()).collect();
+			let ts_toks : Vec<&str> = self.reqs_vec[3].split('.').collect();
 			if ts_toks.len() > 1 {
 				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
 					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
-						dt = datetime.format("%Y%m%d%H%M%S.").to_string() + &ts_toks[1];
+						dt = datetime.format("%Y%m%d%H%M%S.").to_string() + ts_toks[1];
 					}
 				}
 			}
@@ -55,13 +43,13 @@ impl Rec {
 		let mut ret = String::new();
 		if self.reqs_vec.len() > 5 {
 			if self.is_req() {
-				let type_key = &self.reqs_vec[4][..];
+				let type_key = self.get_field(4);
 				let ord_type: &str = match type_key
 				{ "1" => "新單", "2" => "改量", "3" => "改價", "4" => "刪單", "10" =>"成交", _=> "" };
 				ret = format!("{} ({})\n", self.get_timestamp(), ord_type);
 			} 
 			else {
-				if let Ok(st) = self.reqs_vec[6].parse::<i32>() {
+				if let Ok(st) = self.get_field(6).parse::<i32>() {
 					ret = format!("{} =>{}\n", self.get_timestamp(), get_ordst(st));
 				} else {
 					ret = format!("{}\n", self.get_timestamp());
@@ -70,6 +58,20 @@ impl Rec {
 		}
 		ret.push_str(&format!("{}\n{}\n", self.line, self.log));
 		ret
+	}
+}
+
+fn get_ordst(st: i32) -> &'static str {
+	match st {
+		6 => "委託傳送中",
+		7 => "委託已傳送",
+		90=> "委託成功",
+		99 => "委託失敗",
+		101 => "交易所已接受",
+		110 => "部份成交",
+		111 => "全部成交",
+		120 => "交易所取消",
+		_ => "未知",
 	}
 }
 
@@ -118,7 +120,7 @@ impl OrdInfo {
 		}
 	}
 	pub fn to_string(&self) -> String {
-		String::from("\n===== 流水號:") + &self.rid + " 委託書號:" + &self.ordno + " 最後狀態:" + &self.status + " ====="
+		format!("\n===== 流水號:{} 委託書號:{} 最後狀態:{} =====", self.rid, self.ordno, self.status)
 	}
 }
 
@@ -133,41 +135,43 @@ impl OrderRec {
 		}
 	}
 	pub fn insert_rec(&mut self, toks: Vec<String>, line: &str, log: &str) -> (&'static str, String) {
-		let key = &toks[1];
-		let hdr = &toks[0];	
-		if key == "-" { // 沒有key值的，是表格
-			let table_name = &toks[2];
-			let tabrec = self.tables.entry(table_name.to_string()).or_insert(TableRec::new());
+		// 先提取所有需要的值，避免借用問題
+		let key_str = toks.get(1).cloned().unwrap_or_default();
+		let hdr = toks.get(0).cloned().unwrap_or_default();
+		let table_name = toks.get(2).cloned().unwrap_or_default();
+		let reqkey_str = toks.get(4).cloned().unwrap_or_default();
+		
+		if key_str == "-" { // 沒有key值的，是表格
+			let tabrec = self.tables.entry(table_name).or_insert(TableRec::new());
 			for (idx, name) in toks.iter().enumerate() { // 插入每個Provider的Field
 				tabrec.index.insert(name.to_string(), idx);
 			}
-			tabrec.recs = toks.to_vec();
+			tabrec.recs = toks;
 		}
-		else if "Req" == hdr {  // 依key將記錄儲存到hashmap中
-			self.reqs.insert(key.to_string(), Rec{reqs_vec: toks.to_vec(), line: line.to_string(), log: log.to_string(), linked: false});
-			return ("Req", key.to_string())
+		else if hdr == "Req" {  // 依key將記錄儲存到hashmap中
+			self.reqs.insert(key_str.clone(), Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false});
+			return ("Req", key_str)
 		}
-		else if "Ord" == hdr {	
-			let rec = Rec{reqs_vec: toks.to_vec(), line: line.to_string(), log: log.to_string(), linked: false};
-			self.ords.entry(key.to_string()).or_insert(LinkedList::<Rec>::new()).push_back(rec);
+		else if hdr == "Ord" {	
+			let rec = Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false};
+			self.ords.entry(key_str.clone()).or_insert(LinkedList::<Rec>::new()).push_back(rec);
 			// 檢查Req-Ord對應是否有覆蓋的情況
-			let reqkey = &toks[4];
-			match self.req2ord.get(reqkey) {
+			match self.req2ord.get(&reqkey_str) {
 				Some(ordkey) => {
-					if ordkey != key {
-						println!("There is MISS-MAPPING req-ord: req:{} ord:{}", reqkey, ordkey);
+					if ordkey != &key_str {
+						println!("There is MISS-MAPPING req-ord: req:{} ord:{}", reqkey_str, ordkey);
 					}
 				},
 				_ => (),
 			}
-			self.req2ord.insert(reqkey.to_string(), key.to_string());
-			match self.reqs.get_mut(reqkey) {
+			self.req2ord.insert(reqkey_str.clone(), key_str.clone());
+			match self.reqs.get_mut(&reqkey_str) {
 				Some(req) => {
 					req.linked = true;
 				},
 				_ => (),
 			}
-			return ("Ord", key.to_string())
+			return ("Ord", key_str)
 		}
 		else {
 			//println!("unknow toks");
@@ -179,15 +183,15 @@ impl OrderRec {
 		let mut reqord_list = LinkedList::<&Rec>::new();
 		match self.ords.get(key) {
 			Some(list) => {
-				let mut reqkey: String = String::from("");
+				let mut reqkey: &str = "";
 				for ord in list {
-					let ord_reqkey = &ord.reqs_vec[4];
-					if &reqkey != ord_reqkey {
+					let ord_reqkey = ord.get_field(4);
+					if reqkey != ord_reqkey {
 						match self.reqs.get(ord_reqkey) {
 							Some(rec) => reqord_list.push_back(rec),
 							_=> println!("req {} not found", ord_reqkey),
 						}
-						reqkey = ord_reqkey.to_string();
+						reqkey = ord_reqkey;
 					};
 					reqord_list.push_back(ord);
 				}
@@ -199,11 +203,12 @@ impl OrderRec {
 	/// 取得該記錄中，指定欄位的值
 	pub fn get_value(&self, rec: &Rec, field_name: &str) -> String {
 		if rec.reqs_vec.len() > 2 {
-			match self.tables.get(&rec.reqs_vec[2]) {
+			let table_name = rec.get_field(2);
+			match self.tables.get(table_name) {
 				Some(tabrec) => { 
 					match tabrec.index.get(field_name) {
 						Some(idx) => {
-							return rec.reqs_vec[*idx].to_string();
+							return rec.get_field(*idx).to_string();
 						},
 						_=> return String::new(),
 					};
@@ -224,8 +229,8 @@ impl OrderRec {
 						for req in &self.reqs { // 借用結構的reqs成員避免move
 							let rec = req.1;
 							if rec.reqs_vec.len() > 2 {
-								if rec.reqs_vec[2] == table_name {
-									let val = rec.reqs_vec[*idx].to_string();
+								if rec.get_field(2) == table_name {
+									let val = rec.get_field(*idx).to_string();
 									if !val.is_empty() {
 										field_set.insert( val );
 									}
@@ -250,13 +255,11 @@ impl OrderRec {
 		let mut info = OrdInfo::new();
 		let mut ordst :i32 = 0;
 		let mut reqst :i32 = 0;
-		//let mut reqst :i32 = 0;
 		for rec in list {
-			if rec.reqs_vec[0] == "Req" && rec.reqs_vec[4] == "1" { // 若是新單要求，則取流水號
+			if rec.get_field(0) == "Req" && rec.get_field(4) == "1" { // 若是新單要求，則取流水號
 				info.rid = self.get_value(rec, "SorRID");
-				//reqst = rec.reqs_vec[6].parse::<i32>().unwrap();
 			}
-			if rec.reqs_vec[0] == "Ord" {
+			if rec.get_field(0) == "Ord" {
 				info.ordno = self.get_value(rec, "OrdNo");
 				if let Ok(st) = self.get_value(rec, "OrderSt").parse::<i32>() {
 					if st > ordst {
@@ -268,23 +271,23 @@ impl OrderRec {
 				}
 			}
 		}
-		info.status = get_ordst(reqst);
+		info.status = get_ordst(reqst).to_string();
 		info.status.push_str("/");
-		info.status.push_str(&get_ordst(ordst));
+		info.status.push_str(&get_ordst(ordst).to_string());
 		info
 	}
 	/// 檢查rec是否符合條件
 	pub fn check_rec(&self, rec: &Rec, table_name: &str, key_index: usize, target: &str) -> Option<String> {
-		if  rec.reqs_vec.len() < 3 || rec.reqs_vec[2] != table_name {
+		if  rec.reqs_vec.len() < 3 || rec.get_field(2) != table_name {
 			return None;
 		}
 		if rec.reqs_vec.len() > key_index {
-			if rec.reqs_vec[key_index] == target.to_string() {
-				let key = &rec.reqs_vec[1];
-				if rec.reqs_vec[0] == "Ord" {
-					return Some(key.to_string());
-				} else if rec.reqs_vec[0] == "Req" {
-					return Some(self.req2ord[key].to_string());
+			if rec.get_field(key_index) == target {
+				let key_str = rec.get_field(1).to_string();
+				if rec.get_field(0) == "Ord" {
+					return Some(key_str);
+				} else if rec.get_field(0) == "Req" {
+					return Some(self.req2ord[&key_str].to_string());
 				} else {
 					return None;
 				}
@@ -448,14 +451,14 @@ impl Parser {
 			let mut fails = 0;
 			// 掃描req列表，統計
 			for (_, req) in &self.ord_rec.reqs {
-				if req.reqs_vec[4] == "10" || req.reqs_vec[4] == "11" {
+				if req.get_field(4) == "10" || req.get_field(4) == "11" {
 					deals = deals + 1;
 				}
 			}
 			// 掃描req列表，統計
 			for (_, ord) in &self.ord_rec.ords {
 				if let Some(rec) = ord.back() {
-					if rec.reqs_vec.len() > 7 && rec.reqs_vec[7] == "99" {
+					if rec.reqs_vec.len() > 7 && rec.get_field(7) == "99" {
 						fails = fails + 1;
 					}
 				}
