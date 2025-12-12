@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::LinkedList;
 use std::fmt;
+use std::rc::Rc;
 use chrono::prelude::*;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
@@ -33,7 +34,7 @@ impl Rec {
 			if ts_toks.len() > 1 {
 				if let Ok(u_secs) = ts_toks[0].parse::<i64>() {
 					if let Single(datetime) = Local.timestamp_opt(u_secs, 0) {
-						dt = datetime.format("%Y%m%d%H%M%S.").to_string() + ts_toks[1];
+						dt = datetime.format("%Y/%m/%d %H:%M:%S.").to_string() + ts_toks[1];
 					}
 				}
 			}
@@ -127,8 +128,8 @@ impl TableRec {
 	}
 }
 
-type ReqRecMap   = HashMap<String, Rec>;            // ReqKey-Rec
-type OrdRecMap   = HashMap<String, LinkedList<Rec>>;// OrdKey-Rec
+type ReqRecMap   = HashMap<String, Rc<Rec>>;            // ReqKey-Rc<Rec>
+type OrdRecMap   = HashMap<String, Vec<Rc<Rec>>>;       // OrdKey-Vec<Rc<Rec>>
 
 pub struct OrderRec {
 	pub tables : HashMap<String, TableRec>, // table_name-table fields
@@ -181,12 +182,13 @@ impl OrderRec {
 			tabrec.recs = toks;
 		}
 		else if hdr == "Req" {  // 依key將記錄儲存到hashmap中
-			self.reqs.insert(key_str.clone(), Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()});
+			let rec = Rc::new(Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()});
+			self.reqs.insert(key_str.clone(), rec);
 			return ("Req", key_str)
 		}
 		else if hdr == "Ord" {	
-			let rec = Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()};
-			self.ords.entry(key_str.clone()).or_insert(LinkedList::<Rec>::new()).push_back(rec);
+			let rec = Rc::new(Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()});
+			self.ords.entry(key_str.clone()).or_insert(Vec::new()).push(Rc::clone(&rec));
 			// 檢查Req-Ord對應是否有覆蓋的情況
 			match self.req2ord.get(&reqkey_str) {
 				Some(ordkey) => {
@@ -197,12 +199,7 @@ impl OrderRec {
 				_ => (),
 			}
 			self.req2ord.insert(reqkey_str.clone(), key_str.clone());
-			match self.reqs.get_mut(&reqkey_str) {
-				Some(req) => {
-					req.linked = true;
-				},
-				_ => (),
-			}
+			// 注意: Rc 內部不可變，無法修改 linked
 			return ("Ord", key_str)
 		}
 		else {
@@ -211,8 +208,8 @@ impl OrderRec {
 		("", "".to_string())
 	}
 	/// 取得 指定Ord key 的 ReqOrd 的 LinkedList
-	pub fn get_target_ordlist(&self, key: &str) -> LinkedList<&Rec> {
-		let mut reqord_list = LinkedList::<&Rec>::new();
+	pub fn get_target_ordlist(&self, key: &str) -> LinkedList<Rc<Rec>> {
+		let mut reqord_list = LinkedList::<Rc<Rec>>::new();
 		match self.ords.get(key) {
 			Some(list) => {
 				let mut reqkey: &str = "";
@@ -220,12 +217,12 @@ impl OrderRec {
 					let ord_reqkey = ord.get_field(4);
 					if reqkey != ord_reqkey {
 						match self.reqs.get(ord_reqkey) {
-							Some(rec) => reqord_list.push_back(rec),
+							Some(rec) => reqord_list.push_back(Rc::clone(rec)),
 							_=> println!("req {} not found", ord_reqkey),
 						}
 						reqkey = ord_reqkey;
 					};
-					reqord_list.push_back(ord);
+					reqord_list.push_back(Rc::clone(ord));
 				}
 			},
 			_=> (),
@@ -283,7 +280,7 @@ impl OrderRec {
 		};
 	}
 	/// 取得該筆LinkedList的彙總說明
-	fn get_ord_summary(&self, list: &LinkedList<&Rec>) -> OrdInfo {
+	fn get_ord_summary(&self, list: &LinkedList<Rc<Rec>>) -> OrdInfo {
 		let mut info = OrdInfo::new();
 		let mut ordst :i32 = 0;
 		let mut reqst :i32 = 0;
@@ -339,7 +336,7 @@ impl OrderRec {
 		}
 	}*/
 	/// 將ord list轉為字串
-	pub fn ord_list_to_string(&self, list: &LinkedList<&Rec>) -> String {
+	pub fn ord_list_to_string(&self, list: &LinkedList<Rc<Rec>>) -> String {
 		let mut list_str = String::new();
 		list_str.push_str(&self.get_ord_summary(&list).to_string());
 		list_str.push_str("\n");
@@ -349,7 +346,7 @@ impl OrderRec {
 		list_str
 	}
 	/// 印出 Ord list 的 彙總以及 所有Log; 每筆Log會有timestamp
-	pub fn print_ord_list(&self, list: &LinkedList<&Rec>) {
+	pub fn print_ord_list(&self, list: &LinkedList<Rc<Rec>>) {
 		println!("{}", self.get_ord_summary(&list).to_string() );
 		for rec in list {
 			rec.print();
@@ -357,16 +354,16 @@ impl OrderRec {
 	}
 	/// 從前一次的搜尋結果中, 以給定的條件再次搜尋
 	#[allow(dead_code)]
-	pub fn find_list(&self, list_of_list: LinkedList<LinkedList<&Rec>>, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<&Rec>>> {
+	pub fn find_list(&self, list_of_list: LinkedList<LinkedList<Rc<Rec>>>, table_name: &str, field_name: &str, search_target: &str) -> Option<LinkedList<LinkedList<Rc<Rec>>>> {
 		println!("checking {}, {}", field_name, search_target);
-		let mut result_list = LinkedList::<LinkedList<&Rec>>::new();
+		let mut result_list = LinkedList::<LinkedList<Rc<Rec>>>::new();
 		match self.tables.get(table_name) {
 			Some(tabrec) => { // 有對應到指定的table
 				match tabrec.index.get(field_name) {
 					Some(idx) => {  // 有對應到指定的filed
 						for list in list_of_list { // 從給定的list of list裡搜尋每一筆list
 							for rec in list {       // 比對list裡的每一筆 rec
-								if let Some(key) = self.check_rec(rec, table_name, *idx, search_target) {
+								if let Some(key) = self.check_rec(&rec, table_name, *idx, search_target) {
 									result_list.push_back(self.get_target_ordlist(&key)); // 有找到的話存進結果裡
 									break;
 								}
@@ -381,11 +378,11 @@ impl OrderRec {
 		Some(result_list)
 	}
 	/// 以index, 找出ords中相等於target的rec
-	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
+	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<Rc<Rec>>> {
 		let mut found = false;
-		let mut list_of_list = LinkedList::<LinkedList<&Rec>>::new();
+		let mut list_of_list = LinkedList::<LinkedList<Rc<Rec>>>::new();
 		for (_, rec) in &self.reqs  {
-			match self.check_rec(&rec, table_name, key_index, target)
+			match self.check_rec(rec, table_name, key_index, target)
 			{
 				Some(key) => { 
 					//self.print_ord(&key);
@@ -401,13 +398,13 @@ impl OrderRec {
 		list_of_list
 	}
 	/// 以index, 找出reqs中相等於target的rec
-	pub fn find_ord(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<&Rec>> {
+	pub fn find_ord(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<Rc<Rec>>> {
 		let mut found = false;
-		let mut list_of_list = LinkedList::<LinkedList<&Rec>>::new();
+		let mut list_of_list = LinkedList::<LinkedList<Rc<Rec>>>::new();
 		for (key, list) in &self.ords {
-			match list.back() {
+			match list.last() {
 				Some(rec) => {
-					match self.check_rec(&rec, table_name, key_index, target)
+					match self.check_rec(rec, table_name, key_index, target)
 					{
 						Some(key) => { 
 							//self.print_ord(&key);
@@ -426,7 +423,7 @@ impl OrderRec {
 		list_of_list
 	}
 
-	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool, quiet: bool) -> Option<LinkedList<LinkedList<&Rec>>> {
+	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool, quiet: bool) -> Option<LinkedList<LinkedList<Rc<Rec>>>> {
 		if !quiet {
 			println!("checking {}, {}", field_name, search_target);
 		}
@@ -504,7 +501,7 @@ impl Parser {
 			}
 			// 掃描req列表，統計
 			for (_, ord) in &self.ord_rec.ords {
-				if let Some(rec) = ord.back() {
+				if let Some(rec) = ord.last() {
 					if rec.reqs_vec.len() > 7 && rec.get_field(7) == "99" {
 						fails = fails + 1;
 					}
@@ -523,7 +520,7 @@ impl Parser {
 
 	/// 回傳未連結的Req的統計資料
 	pub fn list_unlink_req(&mut self) -> String {
-		let unlinked_req: Vec<(&String, &Rec)> = self.ord_rec.reqs.iter().filter(|v| !v.1.linked ).collect();
+		let unlinked_req: Vec<(&String, &Rc<Rec>)> = self.ord_rec.reqs.iter().filter(|v| !v.1.linked ).collect();
 		let mut ret = String::new();
 		if !unlinked_req.is_empty() {
 			let cnt_str = format!("count:{}\n", unlinked_req.len());
@@ -640,7 +637,7 @@ impl Parser {
 
 	/// 根據搜尋結果生成PKI格式輸出
 	/// list_of_list 是搜尋結果，包含所有符合條件的訂單
-	pub fn get_pki_output_from_search(&self, list_of_list: &LinkedList<LinkedList<&Rec>>) -> String {
+	pub fn get_pki_output_from_search(&self, list_of_list: &LinkedList<LinkedList<Rc<Rec>>>) -> String {
 		let mut ret = String::new();
 		for list in list_of_list {
 			// 找到該訂單的第一筆 Req 作為備用欄位來源
@@ -720,11 +717,11 @@ impl Parser {
 	/// 例如: TwfNew:Side:B|TwfChg:Side:B (聯集：符合其中一個條件)
 	/// 例如: TwfNew:Side:B,TwfChg:Side:B (交集：同時符合兩個條件)
 	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool, pki_output: bool, quiet: bool) {
-		let mut final_result: Option<LinkedList<LinkedList<&Rec>>> = None;
+		let mut final_result: Option<LinkedList<LinkedList<Rc<Rec>>>> = None;
 		
 		// 先按 ',' 分割交集條件組
 		for and_group in condstr.split(',') {
-			let mut or_result: LinkedList<LinkedList<&Rec>> = LinkedList::new();
+			let mut or_result: LinkedList<LinkedList<Rc<Rec>>> = LinkedList::new();
 			let mut seen_ords: HashSet<String> = HashSet::new();  // 用來去重（根據 Ord 記錄）
 			let mut has_result = false;
 			
@@ -766,7 +763,7 @@ impl Parser {
 				final_result = match final_result {
 					Some(lol1) => {
 						// 對 lol1 進行過濾，只保留同時符合 or_result 中任何條件的項目
-						let mut filtered = LinkedList::<LinkedList<&Rec>>::new();
+						let mut filtered = LinkedList::<LinkedList<Rc<Rec>>>::new();
 						for item1 in lol1 {
 							for item2 in &or_result {
 								// 比較兩個 list 中的 req key
@@ -845,7 +842,7 @@ impl Parser {
 	}
 
 	/// 把list of list 存到檔案
-	pub fn save_to_file(&self, list_of_list: &LinkedList<LinkedList<&Rec>>, savefile: &str) {
+	pub fn save_to_file(&self, list_of_list: &LinkedList<LinkedList<Rc<Rec>>>, savefile: &str) {
 		if let Ok(mut buff) = File::create(savefile) {
 			for list in list_of_list {
 				match buff.write(self.ord_rec.ord_list_to_string(&list).as_bytes()) {
