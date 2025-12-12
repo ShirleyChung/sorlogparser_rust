@@ -1,7 +1,7 @@
 use structopt::StructOpt;
 use std::io::*;
 use std::io::{BufReader, Write};
-use std::fs::{File, self};
+use std::fs::{File, self, OpenOptions};
 use std::path::Path;
 use chrono::Local;
 
@@ -95,13 +95,14 @@ fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool, search_field
 			// PKI 模式：執行搜尋或輸出所有記錄
 			if !search_field.is_empty() {
 				// 執行搜尋，find_by_conditions 會自動輸出到檔案
-				parser.find_by_conditions(search_field, "", &true, true);
+				parser.find_by_conditions(search_field, "", &true, true, true);
 				// 搜尋已由 find_by_conditions 處理，此處返回空
 				return Ok(String::new());
 			} else {
 				// 沒有搜尋條件，返回所有記錄的 PKI 格式供上層累積
 				output = parser.get_pki_output();
 			}
+			// Parser 會在此方法結束後自動釋放，每個檔案都用新的 Parser
 		} else {
 			// 普通模式：輸出詳細資訊
 			output.push_str("=== ");
@@ -140,7 +141,27 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 		return Ok(());
 	}
 	
-	let mut pki_output = String::new();
+	let mut pki_file = if use_pki {
+		let now = Local::now();
+		let date_str = now.format("%Y%m%d").to_string();
+		let output_file = format!("PKILog-{}.log", date_str);
+		match OpenOptions::new()
+			.create(true)
+			.append(true)
+			.open(&output_file) {
+			Ok(file) => {
+				println!("Creating PKI output file: {}", output_file);
+				Some(file)
+			},
+			Err(e) => {
+				println!("Error creating {}: {}", output_file, e);
+				None
+			}
+		}
+	} else {
+		None
+	};
+	
 	let mut found_logs = false;
 	
 	for dir in date_dirs {
@@ -152,7 +173,10 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 			match process_log_file(&log_file, encoding, use_pki, search_field) {
 				Ok(output) => {
 					if use_pki {
-						pki_output.push_str(&output);
+						// 直接寫入檔案，然後釋放記憶體
+						if let Some(ref mut file) = pki_file {
+							let _ = file.write_all(output.as_bytes());
+						}
 					} else {
 						print!("{}", output);
 					}
@@ -160,7 +184,9 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 				Err(e) => {
 					let err_msg = format!("Error processing {}: {}\n\n", log_file, e);
 					if use_pki {
-						pki_output.push_str(&err_msg);
+						if let Some(ref mut file) = pki_file {
+							let _ = file.write_all(err_msg.as_bytes());
+						}
 					} else {
 						print!("{}", err_msg);
 					}
@@ -174,20 +200,13 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 		return Ok(());
 	}
 	
-	// 若使用 -pki 選項，輸出到PKILog-{date}.log檔案
-	if use_pki && !pki_output.is_empty() {
-		let now = Local::now();
-		let date_str = now.format("%Y%m%d").to_string();
-		let output_file = format!("PKILog-{}.log", date_str);
-		
-		match File::create(&output_file) {
-			Ok(mut file) => {
-				match file.write_all(pki_output.as_bytes()) {
-					Ok(_) => println!("Output saved to: {}", output_file),
-					Err(e) => println!("Error writing to {}: {}", output_file, e),
-				}
-			},
-			Err(e) => println!("Error creating {}: {}", output_file, e),
+	// PKI 模式的檔案已在迴圈中逐個寫入
+	if use_pki {
+		if pki_file.is_some() {
+			let now = Local::now();
+			let date_str = now.format("%Y%m%d").to_string();
+			let output_file = format!("PKILog-{}.log", date_str);
+			println!("PKI output saved to: {}", output_file);
 		}
 	}
 	
@@ -246,7 +265,7 @@ fn main() -> Result<()> {
 				} else {
 					"".to_string()
 				};
-				parser.find_by_conditions(&options.field, &savepath, &options.hide, options.pki_output);
+				parser.find_by_conditions(&options.field, &savepath, &options.hide, options.pki_output, false);
 			}
 
 			// 若沒有搜尋條件但指定 --pki 時，輸出所有記錄的 PKI 格式到檔案
@@ -255,7 +274,10 @@ fn main() -> Result<()> {
 			if !pki_output.is_empty() {
 				let now = chrono::Local::now();
 				let filename = format!("PKILog-{}.log", now.format("%Y%m%d"));
-				if let Ok(mut file) = File::create(&filename) {
+				if let Ok(mut file) = OpenOptions::new()
+					.create(true)
+					.append(true)
+					.open(&filename) {
 					let _ = file.write_all(pki_output.as_bytes());
 					println!("PKI output saved to: {}", filename);
 				}

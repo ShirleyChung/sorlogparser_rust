@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::collections::LinkedList;
 use std::fmt;
 use chrono::prelude::*;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use chrono::LocalResult::Single;
 
@@ -165,6 +165,13 @@ impl OrderRec {
 			ords  : OrdRecMap::new(),                   // ordKey-一筆Ord
 			req2ord: HashMap::<String, String>::new(),
 		}
+	}
+
+	/// 清空所有記錄以釋放記憶體（保留表格定義）
+	pub fn clear_recs(&mut self) {
+		self.reqs.clear();
+		self.ords.clear();
+		self.req2ord.clear();
 	}
 	pub fn insert_rec(&mut self, toks: Vec<String>, line: &str, log: &str, digsgn: &str) -> (&'static str, String) {
 		// 先提取所有需要的值，避免借用問題
@@ -426,8 +433,10 @@ impl OrderRec {
 		list_of_list
 	}
 
-	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool) -> Option<LinkedList<LinkedList<&Rec>>> {
-		println!("checking {}, {}", field_name, search_target);
+	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool, quiet: bool) -> Option<LinkedList<LinkedList<&Rec>>> {
+		if !quiet {
+			println!("checking {}, {}", field_name, search_target);
+		}
 		if !hide {
 			for (_, tab) in &self.tables {
 				tab.print();
@@ -444,13 +453,23 @@ impl OrderRec {
 							return Some(self.find_ord(table_name, *idx, search_target));
 						}
 						else {
-							println!("cannot find {}, {}", field_name, search_target);
+							if !quiet {
+								println!("cannot find {}, {}", field_name, search_target);
+							}
 						}
 					},
-					_=> println!("field {} not found", field_name),
+					_=> {
+						if !quiet {
+							println!("field {} not found", field_name);
+						}
+					}
 				}
 			},
-			_=> println!("{} doesn't exist", field_name),
+			_=> {
+				if !quiet {
+					println!("{} doesn't exist", field_name);
+				}
+			}
 		}
 		None	
 	}
@@ -569,7 +588,7 @@ impl Parser {
 	}
 
 	/// 生成PKI格式輸出
-	/// 格式: |YYYYMMDD|BrkNo|Ivac(補0到7碼)|字元|HHMMSS|digsgn
+	/// 格式: |YYYYMMDD|BrkNo|Ivac(補0到7碼)|字元|FromUID(右補到15碼)|HHMMSS|digsgn
 	pub fn get_pki_output(&self) -> String {
 		let mut ret = String::new();
 		for (req_key, req) in &self.ord_rec.reqs {
@@ -586,6 +605,7 @@ impl Parser {
 				
 				let date = req.get_date();
 				let time = req.get_time();
+				let fromuid = self.ord_rec.get_value(req, "FromUID");
 				let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
 				let mut ivac = self.ord_rec.get_value(req, "IvacNo");
 				let digsgn = req.get_digsgn();
@@ -616,8 +636,9 @@ impl Parser {
 				
 				// 補 IvacNo 到 7 位
 				let ivac_padded = format!("{:0>7}", ivac);
+				let fromuid_padded = format!("{:>15}", fromuid);
 				
-				let line = format!("|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, time, digsgn);
+				let line = format!("|{}|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, fromuid_padded, time, digsgn);
 				ret.push_str(&line);
 			}
 		}
@@ -643,6 +664,10 @@ impl Parser {
 					// 在 reqs 中查找對應的 Req 記錄
 					if let Some((_, req)) = self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == req_key) {
 						if req.is_req() {
+							if self.ord_rec.get_value(req, "SesName") != "SorAPI" {
+								continue; // 只處理 SesName 為 SorAPI 的記錄
+							}
+
 							let req_kind = self.ord_rec.get_value(req, "ReqKind");
 							
 							// 根據 ReqKind 決定字元，只輸出已知的 ReqKind
@@ -701,7 +726,7 @@ impl Parser {
 	/// 支持 , (AND/交集) 和 | (OR/聯集) 運算符
 	/// 例如: TwfNew:Side:B|TwfChg:Side:B (聯集：符合其中一個條件)
 	/// 例如: TwfNew:Side:B,TwfChg:Side:B (交集：同時符合兩個條件)
-	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool, pki_output: bool) {
+	pub fn find_by_conditions(&mut self, condstr: &str, savefile: &str, hide: &bool, pki_output: bool, quiet: bool) {
 		let mut final_result: Option<LinkedList<LinkedList<&Rec>>> = None;
 		
 		// 先按 ',' 分割交集條件組
@@ -714,7 +739,7 @@ impl Parser {
 			for or_cond in and_group.split('|') {
 				let toks : Vec<&str> = or_cond.trim().split(':').collect();
 				if toks.len() > 2 {
-					if let Some(search_list) = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide) {
+					if let Some(search_list) = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide, quiet) {
 						has_result = true;
 						// 將搜尋結果合併到 or_result（聯集操作），同時去重
 						for item in search_list {
@@ -737,7 +762,9 @@ impl Parser {
 						}
 					}
 				} else {
-					println!("{} is not correct! please specify TableName:FieldName:Value", or_cond);
+					if !quiet {
+						println!("{} is not correct! please specify TableName:FieldName:Value", or_cond);
+					}
 				}
 			}
 			
@@ -781,7 +808,9 @@ impl Parser {
 		
 		match final_result {
 			Some(ret) => {
-				println!("{} occurence found.", ret.len());
+				if !quiet {
+					println!("{} occurence found.", ret.len());
+				}
 				if pki_output {
 					// PKI 模式：輸出符合條件的記錄的 PKI 格式
 					let pki_str = self.get_pki_output_from_search(&ret);
@@ -794,9 +823,14 @@ impl Parser {
 							savefile.to_string()
 						};
 						
-						if let Ok(mut file) = std::fs::File::create(&output_file) {
+						if let Ok(mut file) = OpenOptions::new()
+							.create(true)
+							.append(true)
+							.open(&output_file) {
 							let _ = file.write_all(pki_str.as_bytes());
-							println!("PKI output saved to: {}", output_file);
+							if !quiet {
+								println!("PKI output saved to: {}", output_file);
+							}
 						}
 					}
 				} else {
@@ -809,7 +843,11 @@ impl Parser {
 					self.save_to_file(&ret, savefile);
 				}
 			},
-			None => println!("not found any matches"),
+			None => {
+				if !quiet {
+					println!("not found any matches");
+				}
+			}
 		};
 	}
 
@@ -829,7 +867,7 @@ impl Parser {
 	#[allow(dead_code)]
 	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
 		// 先找看看 Req表
-		match self.ord_rec.check_req_data(table_name, field_name, search_target, &true) {
+		match self.ord_rec.check_req_data(table_name, field_name, search_target, &true, false) {
 			Some(list_of_list) =>
 			for list in list_of_list {
 				self.ord_rec.print_ord_list(&list);
