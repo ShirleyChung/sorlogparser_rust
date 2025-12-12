@@ -165,9 +165,10 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 	let mut found_logs = false;
 	
 	for dir in date_dirs {
-		let log_file = format!("{}\\SorReqOrd.log", dir);
+		let log_path = Path::new(&dir).join("SorReqOrd.log");
+		let log_file = log_path.to_string_lossy().to_string();
 		
-		if Path::new(&log_file).exists() {
+		if log_path.exists() {
 			found_logs = true;
 			println!("Processing: {}", log_file);
 			match process_log_file(&log_file, encoding, use_pki, search_field) {
