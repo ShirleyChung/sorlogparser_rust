@@ -166,13 +166,6 @@ impl OrderRec {
 			req2ord: HashMap::<String, String>::new(),
 		}
 	}
-
-	/// 清空所有記錄以釋放記憶體（保留表格定義）
-	pub fn clear_recs(&mut self) {
-		self.reqs.clear();
-		self.ords.clear();
-		self.req2ord.clear();
-	}
 	pub fn insert_rec(&mut self, toks: Vec<String>, line: &str, log: &str, digsgn: &str) -> (&'static str, String) {
 		// 先提取所有需要的值，避免借用問題
 		let key_str = toks.get(1).cloned().unwrap_or_default();
