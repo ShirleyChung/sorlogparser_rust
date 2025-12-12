@@ -145,6 +145,8 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 		let now = Local::now();
 		let date_str = now.format("%Y%m%d").to_string();
 		let output_file = format!("PKILog-{}.log", date_str);
+		// 清空前次執行的內容
+		let _ = fs::write(&output_file, "");
 		match OpenOptions::new()
 			.create(true)
 			.append(true)
@@ -275,6 +277,8 @@ fn main() -> Result<()> {
 			if !pki_output.is_empty() {
 				let now = chrono::Local::now();
 				let filename = format!("PKILog-{}.log", now.format("%Y%m%d"));
+				// 清空前次執行的內容
+				let _ = fs::write(&filename, "");
 				if let Ok(mut file) = OpenOptions::new()
 					.create(true)
 					.append(true)
