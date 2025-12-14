@@ -579,58 +579,82 @@ impl Parser {
 
 	/// 生成PKI格式輸出
 	/// 格式: |YYYYMMDD|BrkNo|Ivac(補0到7碼)|字元|FromUID(右補到15碼)|HHMMSS|digsgn
+	/// 從單一 Req 記錄生成 PKI 格式輸出
+	/// first_req_key: 當欄位為空時，從這個 Req 取備用值
+	fn generate_pki_line(&self, req: &Rc<Rec>, first_req_key: Option<&Rc<Rec>>) -> Option<String> {
+		if !req.is_req() {
+			return None;
+		}
+		
+		if self.ord_rec.get_value(req, "SesName") != "SorAPI" {
+			return None; // 只處理 SesName 為 SorAPI 的記錄
+		}
+		
+		let req_kind = self.ord_rec.get_value(req, "ReqKind");
+		
+		// 根據 ReqKind 決定字元，只輸出已知的 ReqKind
+		let kind_char = match req_kind.as_str() {
+			"1" => "O",  // 新單
+			"4" => "C",  // 刪單
+			"2" | "3" => "M",  // 改量或改價
+			_ => return None  // 未知 ReqKind，跳過該記錄
+		};
+		
+		let date = req.get_date();
+		let time = req.get_time();
+		let fromuid = self.ord_rec.get_value(req, "FromUID");
+		let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
+		let mut ivac = self.ord_rec.get_value(req, "IvacNo");
+		let digsgn = req.get_digsgn();
+		
+		// 如果 BrkNo 或 IvacNo 為空，從 first_req_key 取值
+		if (brk_no.is_empty() || ivac.is_empty()) && first_req_key.is_some() {
+			let first_req = first_req_key.unwrap();
+			if brk_no.is_empty() {
+				brk_no = self.ord_rec.get_value(first_req, "BrkNo");
+			}
+			if ivac.is_empty() {
+				ivac = self.ord_rec.get_value(first_req, "IvacNo");
+			}
+		}
+		
+		let ivac_padded = format!("{:0>7}", ivac);
+		let fromuid_padded = format!("{:>15}", fromuid);
+		let digsgn_padded = format!("{:<4096}", digsgn); // 補足至4096字元
+		Some(format!("|{}|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, fromuid_padded, time, digsgn_padded))
+	}
+
+	/// 從 Req 記錄列表生成 PKI 格式輸出
+	/// reqs: 要轉換的 Req 記錄列表
+	/// first_req_key: 當欄位為空時的備用值來源
+	fn generate_pki_from_reqs<'a, I>(&self, reqs: I, first_req_key: Option<&Rc<Rec>>) -> String 
+	where
+		I: Iterator<Item = &'a Rc<Rec>>
+	{
+		let mut ret = String::new();
+		for req in reqs {
+			if let Some(line) = self.generate_pki_line(req, first_req_key) {
+				ret.push_str(&line);
+			}
+		}
+		ret
+	}
+
+	/// 生成PKI格式輸出
+	/// 格式: |YYYYMMDD|BrkNo|Ivac(補0至7碼)|字元|FromUID(右補至15碼)|HHMMSS|digsgn
 	pub fn get_pki_output(&self) -> String {
 		let mut ret = String::new();
 		for (req_key, req) in &self.ord_rec.reqs {
-			if req.is_req() {
-				let req_kind = self.ord_rec.get_value(req, "ReqKind");
-				
-				// 根據 ReqKind 決定字元，只輸出已知的 ReqKind
-				let kind_char = match req_kind.as_str() {
-					"1" => "O",  // 新單
-					"4" => "C",  // 刪單
-					"2" | "3" => "M",  // 改量或改價
-					_ => continue  // 未知 ReqKind，跳過該記錄
-				};
-				
-				let date = req.get_date();
-				let time = req.get_time();
-				let fromuid = self.ord_rec.get_value(req, "FromUID");
-				let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
-				let mut ivac = self.ord_rec.get_value(req, "IvacNo");
-				let digsgn = req.get_digsgn();
-				
-				// 如果欄位為空，從該訂單的第一筆 Req 取值
-				if brk_no.is_empty() || ivac.is_empty() {
-					// 找到該 Req 對應的 Ord
-					if let Some(ord_key) = self.ord_rec.req2ord.get(req_key) {
-						// 取得該 Ord 的所有記錄
-						if let Some(ord_list) = self.ord_rec.ords.get(ord_key) {
-							// 找到第一筆 Req
-							if let Some(first_req_rec) = ord_list.iter().find(|rec| rec.get_field(0) == "Req") {
-								let first_req_key = first_req_rec.get_field(1);
-								if let Some((_, first_req)) = self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == first_req_key) {
-									// 如果 BrkNo 為空，從第一筆 Req 取值
-									if brk_no.is_empty() {
-										brk_no = self.ord_rec.get_value(first_req, "BrkNo");
-									}
-									// 如果 IvacNo 為空，從第一筆 Req 取值
-									if ivac.is_empty() {
-										ivac = self.ord_rec.get_value(first_req, "IvacNo");
-									}
-								}
-							}
-						}
-					}
-				}
-				
-				// 補 IvacNo 到 7 位
-				let ivac_padded = format!("{:0>7}", ivac);
-				let fromuid_padded = format!("{:>15}", fromuid);
-				
-				let line = format!("|{}|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, fromuid_padded, time, digsgn);
-				ret.push_str(&line);
-			}
+			// 找到該 Req 對應訂單的第一筆 Req 作為備用值來源
+			let first_req_key = self.ord_rec.req2ord.get(req_key)
+				.and_then(|ord_key| self.ord_rec.ords.get(ord_key))
+				.and_then(|ord_list| ord_list.iter().find(|rec| rec.get_field(0) == "Req"))
+				.and_then(|first_req_rec| {
+					let first_req_key = first_req_rec.get_field(1);
+					self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == first_req_key).map(|(_, r)| r)
+				});
+			
+			ret.push_str(&self.generate_pki_from_reqs(std::iter::once(req), first_req_key));
 		}
 		ret
 	}
@@ -643,60 +667,15 @@ impl Parser {
 			// 找到該訂單的第一筆 Req 作為備用欄位來源
 			let first_req_key = list.iter()
 				.find(|rec| rec.get_field(0) == "Req")
-				.map(|rec| rec.get_field(1))
-				.and_then(|key| self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == key).map(|(_, req)| req));
+				.and_then(|rec| self.ord_rec.reqs.get(rec.get_field(1)));
 			
-			// 遍歷每個訂單中的所有記錄，找出所有 Req 記錄
-			for rec in list {
-				if rec.get_field(0) == "Req" {
-					let req_key = rec.get_field(1);
-					
-					// 在 reqs 中查找對應的 Req 記錄
-					if let Some((_, req)) = self.ord_rec.reqs.iter().find(|(k, _)| k.as_str() == req_key) {
-						if req.is_req() {
-							if self.ord_rec.get_value(req, "SesName") != "SorAPI" {
-								continue; // 只處理 SesName 為 SorAPI 的記錄
-							}
-
-							let req_kind = self.ord_rec.get_value(req, "ReqKind");
-							
-							// 根據 ReqKind 決定字元，只輸出已知的 ReqKind
-							let kind_char = match req_kind.as_str() {
-								"1" => "O",  // 新單
-								"4" => "C",  // 刪單
-								"2" | "3" => "M",  // 改量或改價
-								_ => continue  // 未知 ReqKind，跳過該記錄
-							};
-							
-							let date = req.get_date();
-							let time = req.get_time();
-							let fromuid = self.ord_rec.get_value(req, "FromUID");
-							let mut brk_no = self.ord_rec.get_value(req, "BrkNo");
-							let mut ivac = self.ord_rec.get_value(req, "IvacNo");
-							let digsgn = req.get_digsgn();
-							
-							// 如果 BrkNo 為空，從第一筆 Req 取值
-							if brk_no.is_empty() {
-								if let Some(first_req) = first_req_key {
-									brk_no = self.ord_rec.get_value(first_req, "BrkNo");
-								}
-							}
-							
-							// 如果 IvacNo 為空，從第一筆 Req 取值
-							if ivac.is_empty() {
-								if let Some(first_req) = first_req_key {
-									ivac = self.ord_rec.get_value(first_req, "IvacNo");
-								}
-							}
-							
-							let ivac_padded = format!("{:0>7}", ivac);
-							let fromuid_padded = format!("{:>15}", fromuid);
-							let line = format!("|{}|{}|{}|{}|{}|{}|{}\n", date, brk_no, ivac_padded, kind_char, fromuid_padded, time, digsgn);
-							ret.push_str(&line);
-						}
-					}
-				}
-			}
+			// 收集該訂單中的所有 Req 記錄
+			let req_list: Vec<&Rc<Rec>> = list.iter()
+				.filter(|rec| rec.get_field(0) == "Req")
+				.filter_map(|rec| self.ord_rec.reqs.get(rec.get_field(1)))
+				.collect();
+			
+			ret.push_str(&self.generate_pki_from_reqs(req_list.into_iter(), first_req_key));
 		}
 		ret
 	}
