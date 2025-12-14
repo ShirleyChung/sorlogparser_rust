@@ -70,9 +70,12 @@ impl Rec {
 		dt
 	}
 	pub fn print(&self) {
-		print!("{}", self.to_string());
+		print!("{}", self);
 	}
-	pub fn to_string(&self) -> String {
+}
+
+impl fmt::Display for Rec {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		let mut ret = String::new();
 		if self.reqs_vec.len() > 5 {
 			if self.is_req() {
@@ -81,16 +84,14 @@ impl Rec {
 				{ "1" => "新單", "2" => "改量", "3" => "改價", "4" => "刪單", "10" =>"成交", _=> "" };
 				ret = format!("{} ({})\n", self.get_timestamp(), ord_type);
 			} 
-			else {
-				if let Ok(st) = self.get_field(6).parse::<i32>() {
+			else if let Ok(st) = self.get_field(6).parse::<i32>() {
 					ret = format!("{} =>{}\n", self.get_timestamp(), get_ordst(st));
 				} else {
 					ret = format!("{}\n", self.get_timestamp());
 				}
-			}
 		}
 		ret.push_str(&format!("{}\n{}\n", self.line, self.log));
-		ret
+		write!(f, "{}", ret)
 	}
 }
 
@@ -124,7 +125,7 @@ impl TableRec {
 		for rec in &self.recs {
 			print!("{} ", rec);
 		}
-		println!("");
+		println!();
 	}
 }
 
@@ -152,8 +153,11 @@ impl OrdInfo {
 			status: String::new(),
 		}
 	}
-	pub fn to_string(&self) -> String {
-		format!("\n===== 流水號:{} 委託書號:{} 最後狀態:{} =====", self.rid, self.ordno, self.status)
+}
+
+impl fmt::Display for OrdInfo {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "\n===== 流水號:{} 委託書號:{} 最後狀態:{} =====", self.rid, self.ordno, self.status)
 	}
 }
 
@@ -170,7 +174,7 @@ impl OrderRec {
 	pub fn insert_rec(&mut self, toks: Vec<String>, line: &str, log: &str, digsgn: &str) -> (&'static str, String) {
 		// 先提取所有需要的值，避免借用問題
 		let key_str = toks.get(1).cloned().unwrap_or_default();
-		let hdr = toks.get(0).cloned().unwrap_or_default();
+		let hdr = toks.first().cloned().unwrap_or_default();
 		let table_name = toks.get(2).cloned().unwrap_or_default();
 		let reqkey_str = toks.get(4).cloned().unwrap_or_default();
 		
@@ -188,16 +192,13 @@ impl OrderRec {
 		}
 		else if hdr == "Ord" {	
 			let rec = Rc::new(Rec{reqs_vec: toks, line: line.to_string(), log: log.to_string(), linked: false, digsgn: digsgn.to_string()});
-			self.ords.entry(key_str.clone()).or_insert(Vec::new()).push(Rc::clone(&rec));
+			self.ords.entry(key_str.clone()).or_default().push(Rc::clone(&rec));
 			// 檢查Req-Ord對應是否有覆蓋的情況
-			match self.req2ord.get(&reqkey_str) {
-				Some(ordkey) => {
+			if let Some(ordkey) = self.req2ord.get(&reqkey_str) {
 					if ordkey != &key_str {
 						println!("There is MISS-MAPPING req-ord: req:{} ord:{}", reqkey_str, ordkey);
 					}
-				},
-				_ => (),
-			}
+				}
 			self.req2ord.insert(reqkey_str.clone(), key_str.clone());
 			// 注意: Rc 內部不可變，無法修改 linked
 			return ("Ord", key_str)
@@ -210,8 +211,7 @@ impl OrderRec {
 	/// 取得 指定Ord key 的 ReqOrd 的 LinkedList
 	pub fn get_target_ordlist(&self, key: &str) -> LinkedList<Rc<Rec>> {
 		let mut reqord_list = LinkedList::<Rc<Rec>>::new();
-		match self.ords.get(key) {
-			Some(list) => {
+		if let Some(list) = self.ords.get(key) {
 				let mut reqkey: &str = "";
 				for ord in list {
 					let ord_reqkey = ord.get_field(4);
@@ -224,9 +224,7 @@ impl OrderRec {
 					};
 					reqord_list.push_back(Rc::clone(ord));
 				}
-			},
-			_=> (),
-		};
+			};
 		reqord_list
 	}
 	/// 取得該記錄中，指定欄位的值
@@ -237,15 +235,15 @@ impl OrderRec {
 				Some(tabrec) => { 
 					match tabrec.index.get(field_name) {
 						Some(idx) => {
-							return rec.get_field(*idx).to_string();
+							rec.get_field(*idx).to_string()
 						},
-						_=> return String::new(),
-					};
+						_=> String::new(),
+					}
 				},
-				_=> return String::new(),
-			};
+				_=> String::new(),
+			}
 		} else {
-			return String::new();
+			String::new()
 		}
 	}
 	/// 統計某一欄位的數量: 例如TwfNew總共有多少個user
@@ -257,27 +255,26 @@ impl OrderRec {
 					Some(idx) => {
 						for req in &self.reqs { // 借用結構的reqs成員避免move
 							let rec = req.1;
-							if rec.reqs_vec.len() > 2 {
-								if rec.get_field(2) == table_name {
+							if rec.reqs_vec.len() > 2
+								&& rec.get_field(2) == table_name {
 									let val = rec.get_field(*idx).to_string();
 									if !val.is_empty() {
 										field_set.insert( val );
 									}
 								}
-							}
 						}
 						let mut ret= format!("there are totally {} {} of {}:\n", field_set.len(), field_name, table_name);
 						for user in field_set {							
 							ret.push_str(&user);
-							ret.push_str("\n");
+							ret.push('\n');
 						}
-						return ret;
+						ret
 					},
-					_=> return format!("there is no {} field", field_name),
-				};
+					_=> format!("there is no {} field", field_name),
+				}
 			},
-			_=> return format!("there is no {} table", table_name),
-		};
+			_=> format!("there is no {} table", table_name),
+		}
 	}
 	/// 取得該筆LinkedList的彙總說明
 	fn get_ord_summary(&self, list: &LinkedList<Rc<Rec>>) -> OrdInfo {
@@ -301,8 +298,8 @@ impl OrderRec {
 			}
 		}
 		info.status = get_ordst(reqst).to_string();
-		info.status.push_str("/");
-		info.status.push_str(&get_ordst(ordst).to_string());
+		info.status.push('/');
+		info.status.push_str(get_ordst(ordst));
 		info
 	}
 	
@@ -313,8 +310,8 @@ impl OrderRec {
 		if  rec.reqs_vec.len() < 3 || rec.get_field(2) != table_name {
 			return None;
 		}
-		if rec.reqs_vec.len() > key_index {
-			if rec.get_field(key_index) == target {
+		if rec.reqs_vec.len() > key_index
+			&& rec.get_field(key_index) == target {
 				let key_str = rec.get_field(1).to_string();
 				if rec.get_field(0) == "Ord" {
 					return Some(key_str);
@@ -324,7 +321,6 @@ impl OrderRec {
 					return None;
 				}
 			}
-		}
 		None
 	}
 	/// 印出指定 Ord Key 的 彙總以及 所有Log; 每筆Log會有timestamp
@@ -338,16 +334,16 @@ impl OrderRec {
 	/// 將ord list轉為字串
 	pub fn ord_list_to_string(&self, list: &LinkedList<Rc<Rec>>) -> String {
 		let mut list_str = String::new();
-		list_str.push_str(&self.get_ord_summary(&list).to_string());
-		list_str.push_str("\n");
+		list_str.push_str(&format!("{}", self.get_ord_summary(list)));
+		list_str.push('\n');
 		for rec in list {
-			list_str.push_str(&rec.to_string());
+			list_str.push_str(&format!("{}", rec));
 		}
 		list_str
 	}
 	/// 印出 Ord list 的 彙總以及 所有Log; 每筆Log會有timestamp
 	pub fn print_ord_list(&self, list: &LinkedList<Rc<Rec>>) {
-		println!("{}", self.get_ord_summary(&list).to_string() );
+		println!("{}", self.get_ord_summary(list));
 		for rec in list {
 			rec.print();
 		}
@@ -381,7 +377,7 @@ impl OrderRec {
 	pub fn find_req(&self, table_name: &str, key_index: usize, target: &str) -> LinkedList<LinkedList<Rc<Rec>>> {
 		let mut found = false;
 		let mut list_of_list = LinkedList::<LinkedList<Rc<Rec>>>::new();
-		for (_, rec) in &self.reqs  {
+		for rec in self.reqs.values()  {
 			match self.check_rec(rec, table_name, key_index, target)
 			{
 				Some(key) => { 
@@ -428,7 +424,7 @@ impl OrderRec {
 			println!("checking {}, {}", field_name, search_target);
 		}
 		if !hide {
-			for (_, tab) in &self.tables {
+			for tab in self.tables.values() {
 				tab.print();
 			}
 		}
@@ -442,11 +438,9 @@ impl OrderRec {
 						else if tabrec.recs[0] == "Ord" {
 							return Some(self.find_ord(table_name, *idx, search_target));
 						}
-						else {
-							if !quiet {
+						else if !quiet {
 								println!("cannot find {}, {}", field_name, search_target);
 							}
-						}
 					},
 					_=> {
 						if !quiet {
@@ -494,16 +488,16 @@ impl Parser {
 			let mut deals = 0;
 			let mut fails = 0;
 			// 掃描req列表，統計
-			for (_, req) in &self.ord_rec.reqs {
+			for req in self.ord_rec.reqs.values() {
 				if req.get_field(4) == "10" || req.get_field(4) == "11" {
-					deals = deals + 1;
+					deals += 1;
 				}
 			}
 			// 掃描req列表，統計
-			for (_, ord) in &self.ord_rec.ords {
+			for ord in self.ord_rec.ords.values() {
 				if let Some(rec) = ord.last() {
 					if rec.reqs_vec.len() > 7 && rec.get_field(7) == "99" {
-						fails = fails + 1;
+						fails += 1;
 					}
 				}
 			}
@@ -535,7 +529,7 @@ impl Parser {
 				ret.push_str(&desc_user);
 			}
 
-			ret.push_str("\n");
+			ret.push('\n');
 		}
 		ret
 	}
@@ -574,7 +568,7 @@ impl Parser {
 
 	/// 統計某一欄位的數量: 例如TwfNew總共有多少個user
 	pub fn statistic_field(&self, table_name: &str, field_name: &str) -> String {
-		return self.ord_rec.statistic_field(table_name, field_name);
+		self.ord_rec.statistic_field(table_name, field_name)
 	}
 
 	/// 生成PKI格式輸出
@@ -608,8 +602,7 @@ impl Parser {
 		let digsgn = req.get_digsgn();
 		
 		// 如果 BrkNo 或 IvacNo 為空，從 first_req_key 取值
-		if (brk_no.is_empty() || ivac.is_empty()) && first_req_key.is_some() {
-			let first_req = first_req_key.unwrap();
+		if let Some(first_req) = first_req_key {
 			if brk_no.is_empty() {
 				brk_no = self.ord_rec.get_value(first_req, "BrkNo");
 			}
@@ -714,7 +707,7 @@ impl Parser {
 						for item in search_list {
 							// 根據 Ord 記錄（訂單的標識）進行去重
 							if let Some(ord_rec) = item.iter().find(|rec| rec.get_field(0) == "Ord") {
-								let ord_key = format!("{}", ord_rec.get_field(1));  // Ord 的流水號
+								let ord_key = ord_rec.get_field(1).to_string();  // Ord 的流水號
 								if seen_ords.insert(ord_key) {
 									// 首次見到這個訂單，加入結果
 									or_result.push_back(item);
@@ -722,7 +715,7 @@ impl Parser {
 							} else {
 								// 如果沒有 Ord 記錄，根據第一筆 Req 去重
 								if let Some(req_rec) = item.front() {
-									let req_key = format!("{}", req_rec.get_field(1));
+									let req_key = req_rec.get_field(1).to_string();
 									if seen_ords.insert(req_key) {
 										or_result.push_back(item);
 									}
@@ -730,11 +723,9 @@ impl Parser {
 							}
 						}
 					}
-				} else {
-					if !quiet {
+				} else if !quiet {
 						println!("{} is not correct! please specify TableName:FieldName:Value", or_cond);
 					}
-				}
 			}
 			
 			// 不同的 and_group 是交集 (AND)
@@ -806,7 +797,7 @@ impl Parser {
 					// 普通模式：輸出詳細資訊
 					if !hide {
 						for list in &ret {
-							self.ord_rec.print_ord_list(&list);
+							self.ord_rec.print_ord_list(list);
 						}
 					}
 					self.save_to_file(&ret, savefile);
@@ -824,10 +815,7 @@ impl Parser {
 	pub fn save_to_file(&self, list_of_list: &LinkedList<LinkedList<Rc<Rec>>>, savefile: &str) {
 		if let Ok(mut buff) = File::create(savefile) {
 			for list in list_of_list {
-				match buff.write(self.ord_rec.ord_list_to_string(&list).as_bytes()) {
-					Ok(_) => (),
-					_ => (),
-				}
+				let _ = buff.write(self.ord_rec.ord_list_to_string(list).as_bytes());
 			}					
 		}
 	}

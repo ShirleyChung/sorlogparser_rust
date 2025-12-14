@@ -37,9 +37,9 @@ fn get_reader_line<R: Read>(reader: &mut BufReader<R>, encoding: &EncodingType) 
 			let mut dont_need_utf8 = true;
 			if encoding != &EncodingType::UTF8 {
 				dont_need_utf8 = match encoding {
-					EncodingType::BIG5 => BIG5_2003.decode_to(&mut line_buf, DecoderTrap::Strict, &mut line).is_ok(),
-					EncodingType::JP => ISO_2022_JP.decode_to(&mut line_buf, DecoderTrap::Strict, &mut line).is_ok(),
-					EncodingType::GB => GB18030.decode_to(&mut line_buf, DecoderTrap::Strict, &mut line).is_ok(),
+					EncodingType::BIG5 => BIG5_2003.decode_to(&line_buf, DecoderTrap::Strict, &mut line).is_ok(),
+					EncodingType::JP => ISO_2022_JP.decode_to(&line_buf, DecoderTrap::Strict, &mut line).is_ok(),
+					EncodingType::GB => GB18030.decode_to(&line_buf, DecoderTrap::Strict, &mut line).is_ok(),
 					_ => false,
 				};
 			}
@@ -50,7 +50,7 @@ fn get_reader_line<R: Read>(reader: &mut BufReader<R>, encoding: &EncodingType) 
 			if sz_line < 2 || line.len() < 2 {
 				return LineType::Empty;
 			}
-			if line.as_bytes()[0] == ':' as u8 {
+			if line.as_bytes()[0] == b':' {
 				LineType::Log(line)
 			} else if sz_line > 3 && &line[..3] != "Req" && &line[..3] != "Ord" {
 				LineType::LogExt(line)
@@ -74,7 +74,7 @@ fn get_encoding_constant(encoding_opt: &str) -> EncodingType {
 
 /// line by line with log 解析
 pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, encoding_opt: &str) {
-	print!("parsing data...\n");
+	println!("parsing data...");
 	let mut rec_tmp: String = "".to_string();
 	let mut log_tmp: String = "".to_string();
 	let mut digsgn_tmp: String = "".to_string();

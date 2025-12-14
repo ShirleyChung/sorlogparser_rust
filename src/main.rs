@@ -109,15 +109,15 @@ fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool, search_field
 			output.push_str(filepath);
 			output.push_str(" ===\n");
 			output.push_str(parser.get_info());
-			output.push_str("\n");
+			output.push('\n');
 			
 			let unlinkreqs_info = parser.list_unlink_req();
 			if !unlinkreqs_info.is_empty() {
 				output.push_str("there are unlink reqs:\n");
 				output.push_str(&unlinkreqs_info);
-				output.push_str("\n");
+				output.push('\n');
 			}
-			output.push_str("\n");
+			output.push('\n');
 		}
 	} else {
 		output.push_str(&format!("error opening {}\n\n", filepath));
@@ -204,14 +204,13 @@ fn scan_and_parse_date_dirs(base_dir: &str, encoding: &str, use_pki: bool, searc
 	}
 	
 	// PKI 模式的檔案已在迴圈中逐個寫入
-	if use_pki {
-		if pki_file.is_some() {
+	if use_pki
+		&& pki_file.is_some() {
 			let now = Local::now();
 			let date_str = now.format("%Y%m%d").to_string();
 			let output_file = format!("PKILog-{}.log", date_str);
 			println!("PKI output saved to: {}", output_file);
 		}
-	}
 	
 	Ok(())
 }

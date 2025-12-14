@@ -139,7 +139,7 @@ pub fn run() {
                     ui.set_status_text(status_msg.into());
                     
                     // 設置列標題
-                    let headers = vec!["Date", "BrkNo", "Ivac", "Type", "FromUID", "Time", "DigsgnHash"];
+                    let headers = ["Date", "BrkNo", "Ivac", "Type", "FromUID", "Time", "DigsgnHash"];
                     let column_data: Vec<SharedString> = headers.iter().map(|h| (*h).into()).collect();
                     ui.set_column_data(Rc::new(VecModel::from(column_data)).into());
                     
