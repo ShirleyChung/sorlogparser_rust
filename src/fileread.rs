@@ -96,7 +96,12 @@ pub fn read_data_log<R: Read>(reader: &mut BufReader<R>, parser: &mut Parser, en
 				if log.starts_with(':') {
 					let parts: Vec<&str> = log.split('\x01').collect();
 					if !parts.is_empty() {
-						digsgn_tmp = parts[parts.len() - 1].to_string();
+						// 取最後一個 token，若為空則往前一個 token 取
+						let mut digsgn = parts[parts.len() - 1];
+						if digsgn.is_empty() && parts.len() > 1 {
+							digsgn = parts[parts.len() - 2];
+						}
+						digsgn_tmp = digsgn.to_string();
 					}
 				}
 				log_tmp = log_tmp + &log;

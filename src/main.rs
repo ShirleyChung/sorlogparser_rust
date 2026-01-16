@@ -228,12 +228,12 @@ fn main() -> Result<()> {
 	// 若沒有任何輸入參數，設定預設值：目錄掃描 + 搜尋條件 + PKI 輸出
 	if options.filepath.is_none() && options.field.is_empty() && !options.pki_output && !options.save && !options.show_flow && options.table_field.is_empty() {
 		// 設定預設值
-		options.field = "TwfNew:SesName:SorAPI|TwfChg:SesName:SorAPI|FrfNew:SesName:SorAPI|FrfChg:SesName:SorAPI".to_string();
+		options.field = "TwfNew:SesName:SorAPI|TwfChg:SesName:SorAPI|FrfNew:SesName:SorAPI|FrfChg:SesName:SorAPI|TwsNew:SesName:SorAPI|TwsChg:SesName:SorAPI".to_string();
 		options.pki_output = true;
 	}
 
 	// 若未指定檔案參數，則掃描日期目錄
-	if options.filepath.is_none() {
+	if options.filepath.is_none() || options.filepath == Some(".".to_string()) || options.filepath == Some("*".to_string()) {
 		return scan_and_parse_date_dirs(&options.scan_dir, &options.encoding, options.pki_output, &options.field);
 	}
 
