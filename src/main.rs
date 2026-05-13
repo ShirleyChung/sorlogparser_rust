@@ -11,6 +11,7 @@ use crate::parser::*;
 mod fileread;
 use crate::fileread::*;
 
+#[cfg(feature = "gui")]
 pub mod gui;
 
 /// SorReqOrd Parser
@@ -221,8 +222,17 @@ fn main() -> Result<()> {
 	let mut options = Options::from_args();
 
     if options.gui {
+        #[cfg(feature = "gui")]
+        {
         gui::run();
         return Ok(());
+        }
+
+        #[cfg(not(feature = "gui"))]
+        {
+            println!("GUI support is not enabled in this build.");
+            return Ok(());
+        }
     }
 
 	// 若沒有任何輸入參數，設定預設值：目錄掃描 + 搜尋條件 + PKI 輸出
