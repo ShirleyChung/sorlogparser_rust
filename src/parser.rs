@@ -121,6 +121,7 @@ impl TableRec {
 			recs : Vec::<String>::new(),
 		}
 	}
+	#[allow(dead_code)]
 	pub fn print(&self) {
 		for rec in &self.recs {
 			print!("{} ", rec);
@@ -419,14 +420,9 @@ impl OrderRec {
 		list_of_list
 	}
 
-	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, hide: &bool, quiet: bool) -> Option<LinkedList<LinkedList<Rc<Rec>>>> {
+	pub fn check_req_data(&self, table_name: &str, field_name: &str, search_target: &str, quiet: bool) -> Option<LinkedList<LinkedList<Rc<Rec>>>> {
 		if !quiet {
 			println!("checking {}, {}", field_name, search_target);
-		}
-		if !hide {
-			for tab in self.tables.values() {
-				tab.print();
-			}
 		}
 		match self.tables.get(table_name) {
 			Some(tabrec) => { 
@@ -701,7 +697,7 @@ impl Parser {
 			for or_cond in and_group.split('|') {
 				let toks : Vec<&str> = or_cond.trim().split(':').collect();
 				if toks.len() > 2 {
-					if let Some(search_list) = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], hide, quiet) {
+					if let Some(search_list) = self.ord_rec.check_req_data(toks[0], toks[1], toks[2], quiet) {
 						has_result = true;
 						// 將搜尋結果合併到 or_result（聯集操作），同時去重
 						for item in search_list {
@@ -824,7 +820,7 @@ impl Parser {
 	#[allow(dead_code)]
 	pub fn find_by_field(&mut self, table_name: &str, field_name: &str, search_target: &str) {
 		// 先找看看 Req表
-		match self.ord_rec.check_req_data(table_name, field_name, search_target, &true, false) {
+		match self.ord_rec.check_req_data(table_name, field_name, search_target, true) {
 			Some(list_of_list) =>
 			for list in list_of_list {
 				self.ord_rec.print_ord_list(&list);

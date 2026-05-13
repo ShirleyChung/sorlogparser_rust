@@ -52,6 +52,12 @@ struct Options {
 	/// output to PKILog-{date}.log file
 	#[structopt(long="pki")]
 	pki_output: bool,
+	/// show summary information
+	#[structopt(long="show-summary")]
+	show_summary: bool,
+	/// show unlink requests
+	#[structopt(long="show-unlinkreqs")]
+	show_unlinkreqs: bool,
 }
 
 /// 檢查目錄名是否為日期格式 (8位數字)
@@ -105,20 +111,10 @@ fn process_log_file(filepath: &str, encoding: &str, pki_mode: bool, search_field
 			}
 			// Parser 會在此方法結束後自動釋放，每個檔案都用新的 Parser
 		} else {
-			// 普通模式：輸出詳細資訊
+			// 普通模式：輸出檔案名稱但不輸出詳細資訊
 			output.push_str("=== ");
 			output.push_str(filepath);
-			output.push_str(" ===\n");
-			output.push_str(parser.get_info());
-			output.push('\n');
-			
-			let unlinkreqs_info = parser.list_unlink_req();
-			if !unlinkreqs_info.is_empty() {
-				output.push_str("there are unlink reqs:\n");
-				output.push_str(&unlinkreqs_info);
-				output.push('\n');
-			}
-			output.push('\n');
+			output.push_str(" ===\n\n");
 		}
 	} else {
 		output.push_str(&format!("error opening {}\n\n", filepath));
@@ -257,11 +253,15 @@ fn main() -> Result<()> {
 			read_data_log(&mut reader, &mut parser, &options.encoding);
 
 			// 解析完了, 顯示解析結果
-			println!("-=summary=-\n{}", parser.get_info());
+			if options.show_summary {
+				println!("-=summary=-\n{}", parser.get_info());
+			}
 
-			let unlinkreqs_info = parser.list_unlink_req();
-			if !unlinkreqs_info.is_empty() {
-				println!("there are unlink reqs:\n{}", unlinkreqs_info);
+			if options.show_unlinkreqs {
+				let unlinkreqs_info = parser.list_unlink_req();
+				if !unlinkreqs_info.is_empty() {
+					println!("there are unlink reqs:\n{}", unlinkreqs_info);
+				}
 			}
 
 			// 搜尋指定的目標
